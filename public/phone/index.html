@@ -1,0 +1,3271 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Murder Mystery</title>
+
+    <style>
+        :root {
+            --top-bar-height: 86px;
+            --inventory-height: 126px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #111;
+            color: #f2e5c4;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        .box {
+            width: min(420px, 100%);
+            margin: 0 auto;
+            padding: 25px;
+            text-align: center;
+        }
+
+        input,
+        button,
+        select {
+            width: 100%;
+            min-height: 48px;
+            padding: 14px;
+            margin-top: 10px;
+            font-size: 19px;
+        }
+
+        button {
+            cursor: pointer;
+            background: #4d1717;
+            border: 1px solid #b58c5a;
+            color: white;
+        }
+
+        select {
+            margin: 0;
+            background: #251616;
+            border: 1px solid #b58c5a;
+            color: #f2e5c4;
+        }
+
+        #gameScreen {
+            display: none;
+            position: relative;
+            z-index: 1;
+            /* dvh accounts for mobile browser toolbars; vh is the
+               fallback for browsers that don't support dvh yet. */
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+        }
+
+        #waitingScreen {
+            display: none;
+        }
+
+        #introScreen {
+            display: none;
+            min-height: 100vh;
+            padding: 28px;
+            background-image:
+                linear-gradient(rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0.78)),
+                url("/images/intro-background.png");
+            background-size: cover;
+            background-position: center;
+            color: #f2e5c4;
+            font-family: "Courier New", Courier, monospace;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #phoneIntroBox {
+            width: min(100%, 520px);
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.48);
+            border: 1px solid rgba(242, 229, 196, 0.25);
+            text-align: center;
+        }
+
+        #phoneStoryText {
+            margin: 0;
+            min-height: 245px;
+            font-size: 23px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            text-shadow: 2px 2px 4px black;
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 10px;
+            height: 1.1em;
+            margin-left: 5px;
+            vertical-align: -0.15em;
+            background: #f2e5c4;
+            animation: blink 0.8s steps(1) infinite;
+        }
+
+        #phoneEnterButton {
+            display: none;
+            margin-top: 24px;
+            border: 1px solid rgba(242, 229, 196, 0.75);
+            background: rgba(0, 0, 0, 0.65);
+            color: #f2e5c4;
+            font-family: Georgia, "Times New Roman", serif;
+            letter-spacing: 1px;
+        }
+
+        #roomBar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: var(--top-bar-height);
+            z-index: 100;
+            padding: 10px 14px;
+            background: rgba(20, 10, 10, 0.98);
+            border-bottom: 1px solid #b58c5a;
+        }
+
+        #roomBar label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #d6b57b;
+        }
+
+        #roomBar select {
+            min-height: 48px;
+            font-size: 20px;
+        }
+
+        .gameContent {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        #roomScene {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: #080808;
+            border: 0;
+            overflow: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-x pan-y;
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Applied while a mouse drag-pan is in progress — see the
+           pointerdown/pointermove/pointerup handlers below. */
+        #roomScene.dragging {
+            cursor: grabbing;
+        }
+
+        #roomCanvas {
+            /*
+                Width/height are set in JS by sizeRoomCanvas(), not
+                here. The canvas box must always match the current
+                room's real image aspect ratio exactly (see the big
+                comment above sizeRoomCanvas() in the script below) —
+                that's what keeps hotspot % positions aligned with the
+                photo on every screen size. These are just safe
+                pre-JS defaults so nothing collapses to 0 for a frame.
+            */
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #roomImage {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+        }
+
+        #imageMessage {
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 16;
+            align-items: center;
+            justify-content: center;
+            padding: 25px;
+            background: rgba(0, 0, 0, 0.78);
+            color: #f2e5c4;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        /*
+            The pitch-dark room effect (see rooms with `dark: true` in
+            game/rooms.js, e.g. Basement and Attic). A big black box
+            covers the whole room, with a radial-gradient "hole" that
+            follows the player's finger/cursor, revealing the photo
+            (and any hotspots) underneath only in that circle.
+
+            pointer-events: none is essential — it lets taps pass
+            straight through to the door/item/character hotspots
+            underneath, so the room stays interactive even though it's
+            visually dark. Position tracking happens on #roomScene (see
+            setFlashlightPosition() in the script), not on this overlay.
+        */
+        #flashlightOverlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 15;
+            pointer-events: none;
+            --flashlight-x: 50%;
+            --flashlight-y: 50%;
+            --flashlight-radius: 400px;
+            background: radial-gradient(
+                circle var(--flashlight-radius) at var(--flashlight-x) var(--flashlight-y),
+                rgba(0, 0, 0, 0) 0%,
+                rgba(0, 0, 0, 0.55) 60%,
+                rgba(0, 0, 0, 0.97) 88%
+            );
+        }
+
+        @media (max-width: 420px) {
+            #flashlightOverlay {
+                --flashlight-radius: 400px;
+            }
+        }
+
+        .hotspot {
+            position: absolute;
+            width: 18%;
+            min-width: 72px;
+            height: 15%;
+            min-height: 58px;
+            border: 2px dashed #f0c65d;
+            background: rgba(240, 198, 93, 0.18);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            z-index: 5;
+            touch-action: manipulation;
+        }
+
+        .hotspot:hover {
+            background: rgba(240, 198, 93, 0.35);
+        }
+
+        .doorHotspot {
+            background: rgba(40, 95, 130, 0.2);
+            border-color: rgba(155, 218, 255, 0.9);
+            text-shadow: 1px 1px 2px black;
+        }
+
+        /* Used when an itemHotspot sets iconHotspot: true (e.g. the
+           attic's skull) — the item's own icon image sits visibly in
+           the room instead of a plain dashed text button. No border/
+           background, since the icon itself is the visual. */
+        .itemIconHotspot {
+            border: none;
+            background: none;
+            object-fit: contain;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
+            animation: characterIdleBob 3.2s ease-in-out infinite;
+        }
+
+        #basementPictureHotspot {
+            display: none;
+            position: absolute;
+                left: 48%;
+    top: 45%;
+    width: 18%;
+    height: 25%;
+            z-index: 10;
+            padding: 0;
+            overflow: hidden;
+            border: 2px dashed #f0c65d;
+            background: rgba(0, 0, 0, 0.25);
+            transition:
+                left 700ms ease,
+                top 700ms ease,
+                transform 700ms ease,
+                opacity 500ms ease;
+        }
+
+        #basementPictureHotspot img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+            pointer-events: none;
+        }
+
+        #basementPictureHotspot.pictureMoved {
+            left: 58%;
+    top: 52%;
+            transform: rotate(16deg);
+            opacity: 0.82;
+        }
+
+        #safeHotspot {
+            display: none;
+            position: absolute;
+            left: 49%;
+    top: 48%;
+    width: 8%;
+    height: 30%;
+            z-index: 7;
+            border: 2px dashed #304f35;
+    background: rgb(0 0 0 / 24%);
+        }
+
+        #safeHotspot:hover {
+            background: rgba(45, 110, 55, 0.42);
+        }
+
+        .pickup-fly {
+            position: absolute;
+            z-index: 20;
+            width: 58px;
+            height: 58px;
+            object-fit: contain;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            animation: flyToInventory 850ms ease-in forwards;
+        }
+
+        @keyframes flyToInventory {
+            0% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+
+            70% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.2);
+            }
+
+            100% {
+                left: 50%;
+                top: 112%;
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.25);
+            }
+        }
+
+        /* Used only for giving the Skull to the Mysterious Person —
+           position: fixed (viewport-relative, not room-canvas-relative)
+           since it needs to fly independently of scroll position, from
+           roughly the inventory bar up toward the character. */
+        .skull-fly {
+            position: fixed;
+            left: 50%;
+            top: 88%;
+            z-index: 1600;
+            width: 58px;
+            height: 58px;
+            object-fit: contain;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            animation: flyToCharacter 900ms ease-in forwards;
+        }
+
+        @keyframes flyToCharacter {
+            0% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+
+            100% {
+                top: 16%;
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.35);
+            }
+        }
+
+        #currentRoom {
+            position: fixed;
+            left: 12px;
+            bottom: calc(var(--inventory-height) + 10px);
+            z-index: 80;
+            margin: 0;
+            padding: 8px 11px;
+            max-width: calc(100vw - 24px);
+            border: 1px solid rgba(181, 140, 90, 0.7);
+            background: rgba(0, 0, 0, 0.62);
+            color: #f2e5c4;
+            font-size: 16px;
+        }
+
+        #players {
+            margin-top: 20px;
+            opacity: 0.85;
+            line-height: 1.6;
+        }
+
+        #status {
+            margin-top: 18px;
+            min-height: 24px;
+            color: #e8b9b9;
+        }
+
+        #pickupMessage,
+        #gameMessage {
+            display: none;
+            position: fixed;
+            left: 50%;
+            bottom: calc(var(--inventory-height) + 25px);
+            z-index: 200;
+            transform: translateX(-50%);
+            width: min(360px, calc(100vw - 30px));
+            padding: 12px 16px;
+            background: rgba(20, 10, 10, 0.95);
+            border: 1px solid #b58c5a;
+            color: #f2e5c4;
+            text-align: center;
+            font-size: 16px;
+            line-height: 1.4;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        #inventoryBar {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            height: var(--inventory-height);
+            z-index: 100;
+            padding: 12px 14px;
+            background: rgba(20, 10, 10, 0.98);
+            border-top: 1px solid #b58c5a;
+        }
+
+        #inventoryTitle {
+            margin-bottom: 8px;
+            font-size: 14px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #d6b57b;
+        }
+
+        #inventorySlots {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding-bottom: 5px;
+        }
+
+        .inventorySlot {
+            flex: 0 0 76px;
+            width: 76px;
+            height: 76px;
+            border: 1px solid #80643c;
+            background: rgba(0, 0, 0, 0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .inventorySlot img {
+            width: 66px;
+            height: 66px;
+            object-fit: contain;
+        }
+
+        .inventorySlot.filled {
+            cursor: pointer;
+        }
+
+        .inventorySlot.filled:active {
+            background: rgba(181, 140, 90, 0.25);
+        }
+
+        #itemActionSheetOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.82);
+        }
+
+        #itemActionSheetBox {
+            position: relative;
+            width: min(360px, 100%);
+            max-height: 88vh;
+            overflow-y: auto;
+            padding: 24px 22px 20px;
+            text-align: center;
+            border: 2px solid #b58c5a;
+            border-radius: 10px;
+            background: linear-gradient(160deg, #221515, #120a0a);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #itemActionSheetClose {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 34px;
+            height: 34px;
+            min-height: 34px;
+            margin: 0;
+            padding: 0;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid #b58c5a;
+            color: #f2e5c4;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        #itemActionSheetName {
+            margin-bottom: 16px;
+            font-size: 19px;
+            letter-spacing: 1px;
+            color: #f2e5c4;
+        }
+
+        #itemActionSheetGiveLabel {
+            margin: 18px 0 8px;
+            font-size: 13px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #d6b57b;
+            text-align: left;
+        }
+
+        #itemActionSheetPlayerList {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .itemActionSheetEmpty {
+            padding: 8px 2px;
+            color: rgba(242, 229, 196, 0.55);
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .itemActionButton {
+            width: 100%;
+            min-height: auto;
+            margin: 0;
+            padding: 12px 14px;
+            border: 1px solid #b58c5a;
+            border-radius: 4px;
+            background: #3a1c1c;
+            color: #f2e5c4;
+            font-size: 15px;
+            text-align: left;
+        }
+
+        .itemActionButton:active {
+            background: #552626;
+        }
+
+        #itemPopupOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.82);
+        }
+
+        #itemPopupBox {
+            width: min(360px, 100%);
+            padding: 22px;
+            text-align: center;
+            border: 2px solid #b58c5a;
+            border-radius: 10px;
+            background: linear-gradient(160deg, #221515, #120a0a);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #itemPopupImage {
+            width: 100%;
+            max-height: 45vh;
+            object-fit: contain;
+            margin-bottom: 14px;
+        }
+
+        #itemPopupName {
+            margin-bottom: 8px;
+            font-size: 19px;
+            letter-spacing: 1px;
+            color: #f2e5c4;
+        }
+
+        #itemPopupDescription {
+            font-size: 15px;
+            line-height: 1.5;
+            color: #d6b57b;
+        }
+
+        /*
+            The character standing in a room. Positioned per-room via
+            characterHotspots in game/rooms.js (same left/top/width/
+            height pattern as door and item hotspots). A gentle idle
+            bob makes it read as "alive" rather than a static prop.
+        */
+        .characterHotspot {
+            position: absolute;
+            z-index: 6;
+            cursor: pointer;
+            object-fit: contain;
+            filter: drop-shadow(2px 6px 10px rgba(0, 0, 0, 0.65));
+            animation: characterIdleBob 3.2s ease-in-out infinite;
+        }
+
+        @keyframes characterIdleBob {
+            0%, 100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-4px);
+            }
+        }
+
+        #characterPopupOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.86);
+        }
+
+        #characterPopupBox {
+            position: relative;
+            width: min(400px, 100%);
+            max-height: 88vh;
+            overflow-y: auto;
+            padding: 24px 22px 20px;
+            text-align: center;
+            border: 2px solid #b58c5a;
+            border-radius: 10px;
+            background: linear-gradient(160deg, #221515, #120a0a);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #characterPopupClose {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 34px;
+            height: 34px;
+            min-height: 34px;
+            margin: 0;
+            padding: 0;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid #b58c5a;
+            color: #f2e5c4;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        #characterPopupImage {
+            width: 100%;
+            max-height: 36vh;
+            object-fit: contain;
+            margin-bottom: 14px;
+            border-radius: 6px;
+        }
+
+        #characterPopupName {
+            margin-bottom: 12px;
+            font-size: 18px;
+            letter-spacing: 1px;
+            color: #f2e5c4;
+        }
+
+        #characterDialogueText {
+            min-height: 76px;
+            margin-bottom: 16px;
+            padding: 12px 14px;
+            border: 1px solid rgba(181, 140, 90, 0.5);
+            background: rgba(0, 0, 0, 0.35);
+            color: #f2e5c4;
+            font-size: 15px;
+            line-height: 1.55;
+            text-align: left;
+        }
+
+        #characterQuestionList {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .characterQuestionButton {
+            width: 100%;
+            min-height: auto;
+            margin: 0;
+            padding: 11px 13px;
+            border: 1px solid #b58c5a;
+            border-radius: 4px;
+            background: #3a1c1c;
+            color: #f2e5c4;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .characterQuestionButton:active {
+            background: #552626;
+        }
+
+        /* ---- Accusation menu ("Who do you accuse?") ---- */
+
+        #accusationMenuOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.86);
+        }
+
+        #accusationMenuBox {
+            width: min(380px, 100%);
+            max-height: 88vh;
+            overflow-y: auto;
+            padding: 24px 22px;
+            text-align: center;
+            border: 2px solid #b58c5a;
+            border-radius: 10px;
+            background: linear-gradient(160deg, #221515, #120a0a);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #accusationMenuTitle {
+            margin-bottom: 16px;
+            font-size: 20px;
+            letter-spacing: 1px;
+            color: #f2e5c4;
+        }
+
+        #accusationMenuList {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 18px;
+        }
+
+        .suspectButton {
+            width: 100%;
+            min-height: auto;
+            margin: 0;
+            padding: 12px 14px;
+            border: 1px solid #b58c5a;
+            border-radius: 4px;
+            background: #3a1c1c;
+            color: #f2e5c4;
+            font-size: 15px;
+            text-align: left;
+        }
+
+        .suspectButton:active {
+            background: #552626;
+        }
+
+        .suspectButton.votedFor {
+            border-color: #72ff82;
+            background: #1c3a1f;
+        }
+
+        .noSuspectsText {
+            padding: 10px 2px;
+            color: rgba(242, 229, 196, 0.6);
+            font-size: 15px;
+            text-align: left;
+        }
+
+        #accusationMenuCancel {
+            background: #251616;
+            border-color: #80643c;
+        }
+
+        /* ---- Voting overlay (shown to everyone once a vote starts) ---- */
+
+        #votingOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1200;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.9);
+        }
+
+        #votingBox {
+            width: min(380px, 100%);
+            max-height: 88vh;
+            overflow-y: auto;
+            padding: 26px 22px;
+            text-align: center;
+            border: 2px solid #b58c5a;
+            border-radius: 10px;
+            background: linear-gradient(160deg, #221515, #120a0a);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #votingAccuserLine {
+            margin-bottom: 10px;
+            font-size: 17px;
+            line-height: 1.5;
+            color: #f2e5c4;
+        }
+
+        #votingSubtitle {
+            margin-bottom: 12px;
+            font-size: 13px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #d6b57b;
+            text-align: left;
+        }
+
+        #votingList {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #votingCancelButton {
+            width: 100%;
+            margin-top: 16px;
+            padding: 12px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 4px;
+            background: rgba(40, 40, 40, 0.9);
+            color: #f2e5c4;
+            font-size: 14px;
+        }
+
+        /* ---- Piano puzzle ---- */
+
+        #pianoOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.86);
+        }
+
+        #pianoBox {
+            width: min(420px, 100%);
+            padding: 24px 20px;
+            text-align: center;
+            border: 2px solid #b58c5a;
+            border-radius: 10px;
+            background: linear-gradient(160deg, #221515, #120a0a);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #pianoTitle {
+            margin-bottom: 18px;
+            font-size: 18px;
+            letter-spacing: 1px;
+            color: #f2e5c4;
+        }
+
+        #pianoKeys {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 18px;
+        }
+
+        .pianoKey {
+            flex: 1;
+            min-height: 100px;
+            margin: 0;
+            padding: 0;
+            border: 1px solid #8a6a3f;
+            border-radius: 4px;
+            background: #f2e5c4;
+            color: #221515;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .pianoKey:active {
+            background: #d6b57b;
+            transform: translateY(2px);
+        }
+
+        #pianoCloseButton {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 4px;
+            background: rgba(40, 40, 40, 0.9);
+            color: #f2e5c4;
+            font-size: 14px;
+        }
+
+        /* ---- Ending screen ---- */
+
+        #endingScreen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1500;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+            background-color: #0a0505;
+            background-size: cover;
+            background-position: center;
+            text-align: center;
+        }
+
+        #endingBox {
+            width: min(520px, 100%);
+            padding: 28px 24px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(242, 229, 196, 0.25);
+        }
+
+        #endingStoryText {
+            margin: 0;
+            min-height: 160px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 19px;
+            line-height: 1.5;
+            color: #f2e5c4;
+            white-space: pre-wrap;
+            text-shadow: 2px 2px 4px black;
+            text-align: left;
+        }
+
+        #endingVerdict {
+            display: none;
+            margin-top: 20px;
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 34px;
+            font-weight: bold;
+            letter-spacing: 3px;
+            text-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+        }
+
+        #endingEndGameButton {
+            display: none;
+            width: 100%;
+            margin-top: 24px;
+            padding: 14px;
+            border: 1px solid rgba(242, 229, 196, 0.75);
+            background: rgba(0, 0, 0, 0.65);
+            color: #f2e5c4;
+            font-family: Georgia, "Times New Roman", serif;
+            letter-spacing: 1px;
+        }
+
+        #safeKeypadOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.82);
+        }
+
+        #safeKeypad {
+            width: min(390px, 100%);
+            padding: 20px;
+            border: 2px solid #6d6d6d;
+            border-radius: 12px;
+            background:
+                linear-gradient(135deg, #303030, #101010);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #safeKeypadTitle {
+            margin-bottom: 15px;
+            color: #d8d8d8;
+            text-align: center;
+            font-size: 17px;
+            letter-spacing: 2px;
+        }
+
+        #keypadDisplay {
+            min-height: 70px;
+            margin-bottom: 18px;
+            padding: 15px;
+            overflow: hidden;
+            border: 3px inset #222;
+            border-radius: 5px;
+            background: #061107;
+            color: #72ff82;
+            font-family: "Courier New", monospace;
+            font-size: 33px;
+            letter-spacing: 8px;
+            text-align: right;
+            text-shadow: 0 0 8px #72ff82;
+        }
+
+        #keypadDisplay.error {
+            color: #ff4545;
+            letter-spacing: 2px;
+            text-align: center;
+            text-shadow: 0 0 8px #ff4545;
+        }
+
+        #keypadButtons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .keypadButton {
+            min-height: 62px;
+            margin: 0;
+            border: 1px solid #777;
+            border-radius: 7px;
+            background: linear-gradient(#5d5d5d, #252525);
+            color: white;
+            font-size: 25px;
+            font-weight: bold;
+            box-shadow: 0 4px 0 #111;
+        }
+
+        .keypadButton:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 #111;
+        }
+
+        .keypadButton.action {
+            font-size: 15px;
+            background: linear-gradient(#6d3131, #2d0e0e);
+        }
+
+        .keypadButton.enter {
+            background: linear-gradient(#346b3b, #123817);
+        }
+
+        #closeKeypadButton {
+            margin-top: 15px;
+            background: #251616;
+            border-color: #80643c;
+        }
+
+        @media (max-width: 420px) {
+            :root {
+                --top-bar-height: 84px;
+                --inventory-height: 118px;
+            }
+
+            input,
+            button,
+            select {
+                font-size: 18px;
+            }
+
+            .inventorySlot {
+                flex-basis: 70px;
+                width: 70px;
+                height: 70px;
+            }
+
+            .inventorySlot img {
+                width: 60px;
+                height: 60px;
+            }
+        }
+
+        @keyframes blink {
+            50% {
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="box" id="joinScreen">
+        <h1>Join Game</h1>
+        <input id="codeInput" placeholder="Lobby code">
+        <input id="nameInput" maxlength="10" placeholder="Your name (max 10 characters)">
+        <button onclick="joinGame()">Join Lobby</button>
+        <div id="status"></div>
+    </div>
+
+    <div class="box" id="waitingScreen">
+        <h1>Joined</h1>
+        <p id="waitingText">Waiting for the host to start the game.</p>
+    </div>
+
+    <div id="introScreen">
+        <div id="phoneIntroBox">
+            <p id="phoneStoryText"></p><span class="cursor"></span>
+            <button id="phoneEnterButton" onclick="enterMansion()">
+                Enter the Mansion
+            </button>
+        </div>
+    </div>
+
+    <div id="gameScreen">
+        <div id="roomBar">
+            <label for="roomSelect">Choose a room</label>
+
+            <!--
+                Options are built at runtime from /api/game-data (see
+                buildRoomSelect() below), which reads game/rooms.js on
+                the server. Add a room there and it shows up here
+                automatically — nothing to edit in this file.
+            -->
+            <select id="roomSelect" onchange="selectRoom(this.value)"></select>
+        </div>
+
+        <div class="gameContent">
+            <div id="roomScene">
+                <div id="roomCanvas">
+                    <img id="roomImage" src="" alt="Current room" draggable="false">
+                    <div id="imageMessage"></div>
+
+                    <!--
+                        Regular doors and "take item" hotspots for the
+                        current room are generated here in JS from the
+                        room's config (see renderDoorHotspots and
+                        renderItemHotspots). The elements below stay
+                        hand-placed because they're bespoke, multi-step
+                        puzzle pieces rather than plain doors/items.
+                    -->
+                    <div id="doorHotspotsContainer"></div>
+                    <div id="itemHotspotsContainer"></div>
+                    <div id="characterHotspotsContainer"></div>
+                    <div id="catHotspotContainer"></div>
+
+                    <button
+                        id="basementDoorHotspot"
+                        class="hotspot"
+                        onclick="useBasementDoor()"
+                        style="display: none; left: 42%; top: 28%; width: 24%; height: 55%;"
+                    >
+                        Basement Door
+                    </button>
+
+                    <button
+                        id="basementPictureHotspot"
+                        onclick="moveBasementPicture()"
+                        aria-label="Move picture"
+                    >
+                        <img
+                            src="/images/basement-picture.png"
+                            alt="Old picture covering the wall"
+                        >
+                    </button>
+
+                    <button
+                        id="safeHotspot"
+                        class="hotspot"
+                        onclick="openSafe()"
+                    >
+                        Hidden Safe
+                    </button>
+
+                    <button
+                        id="accuseHotspot"
+                        class="hotspot"
+                        onclick="openAccusationMenu()"
+                        style="display: none; left: 40%; top: 55%; width: 20%; height: 30%;"
+                    >
+                        Make an Accusation
+                    </button>
+
+                    <button
+                        id="pianoHotspot"
+                        class="hotspot"
+                        onclick="openPianoGame()"
+                        style="display: none; left: 8%; top: 30%; width: 16%; height: 40%;"
+                    >
+                        Piano
+                    </button>
+
+                    <div id="flashlightOverlay"></div>
+                </div>
+            </div>
+
+            <div id="currentRoom">You are in: Lobby</div>
+            <div id="players"></div>
+        </div>
+
+        <div id="pickupMessage"></div>
+        <div id="gameMessage"></div>
+
+        <div id="inventoryBar">
+            <div id="inventoryTitle">Inventory</div>
+            <div id="inventorySlots"></div>
+        </div>
+
+        <!--
+            Shown when a player taps a filled inventory slot. Lets them
+            choose to inspect the item, or hand it to another player.
+            See openItemActionSheet() below.
+        -->
+        <div id="itemActionSheetOverlay" onclick="closeItemActionSheet()">
+            <div id="itemActionSheetBox" onclick="event.stopPropagation()">
+                <button
+                    type="button"
+                    id="itemActionSheetClose"
+                    onclick="closeItemActionSheet()"
+                    aria-label="Close"
+                >&times;</button>
+
+                <div id="itemActionSheetName"></div>
+
+                <button
+                    type="button"
+                    class="itemActionButton"
+                    onclick="inspectFromActionSheet()"
+                >Inspect</button>
+
+                <div id="itemActionSheetGiveLabel">Give item to:</div>
+                <div id="itemActionSheetPlayerList"></div>
+            </div>
+        </div>
+
+        <!--
+            Shown after choosing "Inspect" from the action sheet above.
+            Tapping anywhere on the overlay closes it.
+        -->
+        <div id="itemPopupOverlay" onclick="closeItemPopup()">
+            <div id="itemPopupBox">
+                <img id="itemPopupImage" src="" alt="">
+                <div id="itemPopupName"></div>
+                <div id="itemPopupDescription"></div>
+            </div>
+        </div>
+
+        <!--
+            Shown when a player taps a character standing in a room.
+            Tapping outside the card (the dark backdrop) closes it —
+            tapping inside the card does not, so tapping questions
+            works normally. See openCharacterPopup() below.
+        -->
+        <div id="characterPopupOverlay" onclick="closeCharacterPopup()">
+            <div id="characterPopupBox" onclick="event.stopPropagation()">
+                <button
+                    type="button"
+                    id="characterPopupClose"
+                    onclick="closeCharacterPopup()"
+                    aria-label="Close"
+                >&times;</button>
+
+                <img id="characterPopupImage" src="" alt="">
+                <div id="characterPopupName"></div>
+                <div id="characterDialogueText"></div>
+                <div id="characterQuestionList"></div>
+            </div>
+        </div>
+
+        <!--
+            Shown when a player taps the "Make an Accusation" hotspot
+            in the Lobby room. Lists known suspects (characters at
+            least one player has talked to). Picking a name both
+            starts the group vote AND casts that player's own vote.
+            See openAccusationMenu() below.
+        -->
+        <div id="accusationMenuOverlay" onclick="closeAccusationMenu()">
+            <div id="accusationMenuBox" onclick="event.stopPropagation()">
+                <div id="accusationMenuTitle">Who do you accuse?</div>
+                <div id="accusationMenuList"></div>
+                <button
+                    type="button"
+                    id="accusationMenuCancel"
+                    onclick="closeAccusationMenu()"
+                >Cancel</button>
+            </div>
+        </div>
+
+        <!--
+            Shown to EVERY player once an accusation is underway
+            (lobby.accusation is set). Each player votes for whoever
+            they believe is guilty from the same suspect list — see
+            renderVotingOverlay() below.
+        -->
+        <div id="votingOverlay">
+            <div id="votingBox">
+                <div id="votingAccuserLine"></div>
+                <div id="votingSubtitle">Vote for the suspect:</div>
+                <div id="votingList"></div>
+                <button
+                    type="button"
+                    id="votingCancelButton"
+                    onclick="cancelVoting()"
+                >Cancel</button>
+            </div>
+        </div>
+
+        <!--
+            Piano puzzle, opened via #pianoHotspot in the Library room.
+            8 keys spanning one octave (C D E F G A B C). Playing the
+            correct sequence (checked live client-side for instant
+            feedback, then confirmed by the server) reveals a hidden
+            passage to the Attic. See openPianoGame()/pressPianoKey()
+            below.
+        -->
+        <div id="pianoOverlay">
+            <div id="pianoBox">
+                <div id="pianoTitle">Play the melody</div>
+                <div id="pianoKeys"></div>
+                <button
+                    type="button"
+                    id="pianoCloseButton"
+                    onclick="closePianoGame()"
+                >Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="endingScreen">
+        <div id="endingBox">
+            <p id="endingStoryText"></p><span class="cursor"></span>
+            <div id="endingVerdict"></div>
+            <button
+                type="button"
+                id="endingEndGameButton"
+                onclick="endGameForEveryone()"
+                style="display: none;"
+            >End Game</button>
+        </div>
+    </div>
+
+    <div id="safeKeypadOverlay">
+        <div id="safeKeypad">
+            <div id="safeKeypadTitle">SECURITY KEYPAD</div>
+            <div id="keypadDisplay">----</div>
+
+            <div id="keypadButtons">
+                <button class="keypadButton" onclick="pressKeypadNumber('1')">1</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('2')">2</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('3')">3</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('4')">4</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('5')">5</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('6')">6</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('7')">7</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('8')">8</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('9')">9</button>
+
+                <button class="keypadButton action" onclick="clearKeypad()">CLEAR</button>
+                <button class="keypadButton" onclick="pressKeypadNumber('0')">0</button>
+                <button class="keypadButton enter" onclick="submitKeypadCode()">ENTER</button>
+            </div>
+
+            <button id="closeKeypadButton" onclick="closeSafeKeypad()">
+                Close
+            </button>
+        </div>
+    </div>
+
+    <audio id="keypadSound" preload="auto">
+        <source src="/sounds/keypad-beep.mp3" type="audio/mpeg">
+    </audio>
+
+    <!--
+        Src is set dynamically per item right before playing (see the
+        pickupSuccess handler below) — different items can play
+        different sounds, set via each item's optional `pickupSound`
+        in game/items.js.
+    -->
+    <audio id="pickupSound" preload="auto"></audio>
+
+    <!-- Played when the library piano puzzle is solved. Reuses the
+         existing door.mp3 rather than requiring a new sound file. -->
+    <audio id="passageOpenSound" preload="auto">
+        <source src="/sounds/door.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- Played once per browser session, the first time this player
+         personally enters the Backyard. -->
+    <audio id="crowSoundElement" preload="auto">
+        <source src="/sounds/crow.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- Src is set dynamically per click (meow.mp3 or hiss.mp3 on the
+         5th) — see clickCatHotspot()/catHotspotSound below. -->
+    <audio id="catSoundElement" preload="auto"></audio>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        const socket = io();
+
+        let joinedLobby = null;
+        let inventory = [];
+        let introStarted = false;
+        let letterIndex = 0;
+        let gameMessageTimer;
+        let keypadCode = "";
+        let keypadLocked = false;
+
+        // The room the player is currently looking at. Kept in sync by
+        // showRoomImage() and used to re-render hotspots after events
+        // like pickupError or playerUpdate.
+        let currentRoom = "lobby";
+
+        // Remembers where on screen the last item pickup happened, so
+        // the "fly to inventory" animation starts from the right spot.
+        let pendingPickupSpot = null;
+
+        let playerToken = localStorage.getItem("playerToken");
+
+        if (!playerToken) {
+            playerToken = crypto.randomUUID();
+            localStorage.setItem("playerToken", playerToken);
+        }
+
+        // ------------------------------------------------------------
+        // Session persistence. We remember which lobby + name were last
+        // used so a refresh (or briefly closing the tab) rejoins
+        // automatically instead of dropping back to the Join screen.
+        // The server keeps a disconnected player's spot (and inventory)
+        // for 5 minutes before giving up on them, so this has 5 minutes
+        // to succeed.
+        // ------------------------------------------------------------
+        let savedLobbyCode = localStorage.getItem("lobbyCode") || "";
+        let savedPlayerName = localStorage.getItem("playerName") || "";
+        let attemptingAutoRejoin = Boolean(savedLobbyCode);
+
+        function rememberSession(code, name) {
+            savedLobbyCode = code;
+            savedPlayerName = name;
+            localStorage.setItem("lobbyCode", code);
+            localStorage.setItem("playerName", name);
+        }
+
+        function forgetSession() {
+            savedLobbyCode = "";
+            attemptingAutoRejoin = false;
+            localStorage.removeItem("lobbyCode");
+        }
+
+        socket.on("connect", () => {
+            if (!savedLobbyCode) return;
+
+            attemptingAutoRejoin = true;
+            document.getElementById("status").innerText = "Reconnecting to your game...";
+
+            socket.emit("joinLobby", {
+                code: savedLobbyCode,
+                name: savedPlayerName || "Player",
+                playerToken
+            });
+        });
+
+        // Fallback: if auto-rejoin doesn't apply or fails, at least
+        // prefill the form so the player doesn't have to retype it.
+        if (savedLobbyCode) {
+            document.getElementById("codeInput").value = savedLobbyCode;
+        }
+
+        if (savedPlayerName) {
+            document.getElementById("nameInput").value = savedPlayerName;
+        }
+
+        // ------------------------------------------------------------
+        // Room, character, and item data. This now comes from
+        // game/rooms.js, game/characters.js, and game/items.js on the
+        // server via /api/game-data, so adding/editing any of them
+        // only ever requires editing those files.
+        // ------------------------------------------------------------
+        let roomsConfig = {};
+        let charactersConfig = {};
+        let itemsConfig = {};
+
+        const roomsConfigLoaded = fetch("/api/game-data")
+            .then(response => response.json())
+            .then(data => {
+                roomsConfig = data.rooms || {};
+                charactersConfig = data.characters || {};
+                itemsConfig = data.items || {};
+                buildRoomSelect();
+
+                // If we already joined a lobby before this finished
+                // loading, re-render now that we actually have room data.
+                if (joinedLobby) {
+                    updatePhoneLobby(joinedLobby);
+                }
+            })
+            .catch(() => {
+                document.getElementById("status").innerText =
+                    "Could not load room data. Refresh the page.";
+            });
+
+        const roomSelect = document.getElementById("roomSelect");
+        const roomImage = document.getElementById("roomImage");
+        const imageMessage = document.getElementById("imageMessage");
+        const roomScene = document.getElementById("roomScene");
+        const roomCanvas = document.getElementById("roomCanvas");
+        const doorHotspotsContainer = document.getElementById("doorHotspotsContainer");
+        const itemHotspotsContainer = document.getElementById("itemHotspotsContainer");
+        const characterHotspotsContainer = document.getElementById("characterHotspotsContainer");
+        const catHotspotContainer = document.getElementById("catHotspotContainer");
+        const basementDoorHotspot = document.getElementById("basementDoorHotspot");
+        const basementPictureHotspot = document.getElementById("basementPictureHotspot");
+        const safeHotspot = document.getElementById("safeHotspot");
+        const flashlightOverlay = document.getElementById("flashlightOverlay");
+        const phoneStoryText = document.getElementById("phoneStoryText");
+        const phoneEnterButton = document.getElementById("phoneEnterButton");
+        const safeKeypadOverlay = document.getElementById("safeKeypadOverlay");
+        const keypadDisplay = document.getElementById("keypadDisplay");
+        const keypadSound = document.getElementById("keypadSound");
+        const pickupSoundElement = document.getElementById("pickupSound");
+        const passageOpenSoundElement = document.getElementById("passageOpenSound");
+        const crowSoundElement = document.getElementById("crowSoundElement");
+        const catSoundElement = document.getElementById("catSoundElement");
+        const pianoHotspot = document.getElementById("pianoHotspot");
+
+        const story = [
+            "October 31st, 1998.",
+            "",
+            "You have been invited to an isolated mansion.",
+            "Tonight, someone will not leave alive.",
+            "",
+            "Find the truth before the killer finds you."
+        ].join("\n");
+
+        const typingSpeed = 42;
+
+        // Builds the <option> list for the room dropdown from
+        // roomsConfig. Rooms with a `requiresFlag` (like Basement or
+        // the Attic, once its own piano-puzzle flag is added) or
+        // `hiddenUntilVisited` (like the Backyard) start hidden and
+        // are revealed by updateLockedRoomOptions().
+        function buildRoomSelect() {
+            const previousValue = roomSelect.value;
+            roomSelect.innerHTML = "";
+
+            Object.values(roomsConfig).forEach(room => {
+                const option = document.createElement("option");
+                option.value = room.id;
+                option.textContent = room.label;
+
+                if (room.requiresFlag) {
+                    option.dataset.requiresFlag = room.requiresFlag;
+                }
+
+                if (room.hiddenUntilVisited) {
+                    option.dataset.hiddenUntilVisited = "true";
+                }
+
+                if (room.requiresFlag || room.hiddenUntilVisited) {
+                    option.style.display = "none";
+                }
+
+                roomSelect.appendChild(option);
+            });
+
+            if (previousValue) {
+                roomSelect.value = previousValue;
+            }
+
+            updateLockedRoomOptions();
+        }
+
+        // Shows/hides every dropdown option that's conditionally
+        // visible — either a requiresFlag room (e.g. basementUnlocked)
+        // or a hiddenUntilVisited room (e.g. the Backyard, revealed
+        // lobby-wide via joinedLobby.visitedRooms once anyone walks in
+        // through its door). Automatically covers every current and
+        // future room using either mechanism.
+        function updateLockedRoomOptions() {
+            if (!joinedLobby) return;
+
+            roomSelect.querySelectorAll("option").forEach(option => {
+                const hasRequiresFlag = Boolean(option.dataset.requiresFlag);
+                const hasHiddenUntilVisited = option.dataset.hiddenUntilVisited === "true";
+
+                if (!hasRequiresFlag && !hasHiddenUntilVisited) return;
+
+                let visible = true;
+
+                if (hasRequiresFlag) {
+                    visible = visible && joinedLobby[option.dataset.requiresFlag] === true;
+                }
+
+                if (hasHiddenUntilVisited) {
+                    visible = visible && Boolean(joinedLobby.visitedRooms?.[option.value]);
+                }
+
+                option.style.display = visible ? "block" : "none";
+            });
+        }
+
+        function joinGame() {
+            const code = document.getElementById("codeInput").value.trim().toUpperCase();
+            const name = document.getElementById("nameInput").value.trim().slice(0, 10) || "Player";
+
+            if (!code) {
+                document.getElementById("status").innerText = "Enter a lobby code.";
+                return;
+            }
+
+            attemptingAutoRejoin = false;
+
+            socket.emit("joinLobby", {
+                code,
+                name,
+                playerToken
+            });
+        }
+
+        socket.on("joinSuccess", (lobby) => {
+            joinedLobby = lobby;
+            attemptingAutoRejoin = false;
+
+            const me = lobby.players.find(player => player.token === playerToken);
+            rememberSession(lobby.code, me ? me.name : savedPlayerName || "Player");
+
+            updatePhoneLobby(lobby);
+            syncScreenToLobbyStatus(lobby);
+        });
+
+        socket.on("joinError", (message) => {
+            document.getElementById("status").innerText = message;
+
+            // If this failure was an automatic rejoin attempt (e.g. the
+            // lobby expired while we were away), don't keep retrying on
+            // every future reconnect — fall back to a normal join screen.
+            if (attemptingAutoRejoin) {
+                forgetSession();
+            }
+        });
+
+        socket.on("lobbyUpdate", (lobby) => {
+            if (!joinedLobby || lobby.code !== joinedLobby.code) return;
+
+            joinedLobby = lobby;
+            updatePhoneLobby(lobby);
+            syncScreenToLobbyStatus(lobby);
+        });
+
+        socket.on("gameStarted", (lobby) => {
+            joinedLobby = lobby;
+            updatePhoneLobby(lobby);
+            syncScreenToLobbyStatus(lobby);
+        });
+
+        socket.on("mansionEntered", (lobby) => {
+            joinedLobby = lobby;
+            updatePhoneLobby(lobby);
+            syncScreenToLobbyStatus(lobby);
+        });
+
+        socket.on("removedFromLobby", (message) => {
+            resetToJoinScreen(message);
+        });
+
+        socket.on("lobbyClosed", (message) => {
+            resetToJoinScreen(message);
+        });
+
+        socket.on("playerUpdate", (data) => {
+            inventory = data.inventory || [];
+            renderInventory();
+            renderItemHotspots(currentRoom);
+            updateBasementVisibility();
+            updateBasementPuzzle();
+        });
+
+        socket.on("pickupSuccess", (item) => {
+            showPickupMessage(item.name);
+            animatePickup(item.icon);
+            playPickupSound(item.sound);
+        });
+
+        socket.on("itemReceived", (data) => {
+            showGameMessage(`${data.fromName} gave you ${data.itemName}`);
+        });
+
+        socket.on("accusationResult", (data) => {
+            // "good"/"bad" endings are handled by syncScreenToLobbyStatus
+            // once lobby.status becomes "ended" (via the lobbyUpdate that
+            // follows this event) — that way even a player who reconnects
+            // later still sees the correct ending. A tie has no lasting
+            // state change, so it's handled entirely here.
+            if (data.result === "tie") {
+                document.getElementById("votingOverlay").style.display = "none";
+                showGameMessage("Group hasn't decided who the suspect is.");
+            }
+        });
+
+        socket.on("pickupError", (message) => {
+            showGameMessage(message);
+            renderItemHotspots(currentRoom);
+        });
+
+        socket.on("gameMessage", (message) => {
+            showGameMessage(message);
+        });
+
+        socket.on("moveError", (message) => {
+            showGameMessage(message);
+
+            if (joinedLobby) {
+                updatePhoneLobby(joinedLobby);
+            }
+        });
+
+        socket.on("basementDoorError", (message) => {
+            showDoorSpotMessage(message);
+        });
+
+        socket.on("basementUnlocked", () => {
+            showDoorSpotMessage("The key turns. The basement doors slowly open.");
+            updateLockedRoomOptions();
+            updateBasementVisibility();
+        });
+
+        socket.on("basementEntered", () => {
+            showGameMessage("You enter the basement.");
+        });
+
+        socket.on("showSafeKeypad", () => {
+            openSafeKeypad();
+        });
+
+        socket.on("safeError", (message) => {
+            showGameMessage(message);
+        });
+
+        socket.on("safeCodeWrong", () => {
+            keypadLocked = true;
+            keypadDisplay.textContent = "ERROR";
+            keypadDisplay.classList.add("error");
+
+            setTimeout(() => {
+                keypadCode = "";
+                keypadLocked = false;
+                keypadDisplay.classList.remove("error");
+                updateKeypadDisplay();
+            }, 1800);
+        });
+
+        socket.on("safeCodeCorrect", () => {
+            keypadLocked = true;
+            keypadDisplay.textContent = "OPEN";
+            keypadDisplay.classList.remove("error");
+
+            setTimeout(() => {
+                closeSafeKeypad();
+            }, 900);
+        });
+
+        socket.on("safeEntered", () => {
+            showGameMessage("The safe door opens.");
+        });
+
+        function selectRoom(room) {
+            if (!joinedLobby) return;
+
+            const config = roomsConfig[room];
+
+            // Quick client-side check so the player gets instant
+            // feedback instead of waiting on a round trip — the server
+            // enforces this too (see the movePlayer handler in
+            // server.js), so this is just for responsiveness, not
+            // security.
+            if (config && config.requiresItem) {
+                const hasItem = inventory.some(item => item.id === config.requiresItem);
+
+                if (!hasItem) {
+                    showGameMessage(config.missingItemMessage || "Room is too dark to enter.");
+                    roomSelect.value = currentRoom;
+                    return;
+                }
+            }
+
+            roomSelect.value = room;
+
+            socket.emit("movePlayer", {
+                code: joinedLobby.code,
+                playerToken,
+                room
+            });
+
+            showRoomImage(room);
+        }
+
+        // ------------------------------------------------------------
+        // Keeping hotspots aligned with the photo, on every screen.
+        //
+        // Every hotspot (door or item) is positioned as a % of
+        // #roomCanvas's box (e.g. left: 64%, top: 58%). That only
+        // lands on the correct point of the actual photo if
+        // #roomCanvas's box has the EXACT same width/height ratio as
+        // the photo itself. If the box is a different shape,
+        // object-fit: cover has to crop the photo to fill it — and
+        // that crop shifts depending on screen size, so a hotspot
+        // that lined up on one phone drifts on another.
+        //
+        // sizeRoomCanvas() fixes this by giving #roomCanvas a real
+        // pixel width/height every time the room or screen size
+        // changes, using that room's imageAspectRatio (from
+        // game/rooms.js) — sized to always cover the visible scene,
+        // the same way object-fit: cover would, but as an actual box
+        // instead of a crop. Because the box's ratio always equals
+        // the image's ratio, no cropping ever actually happens, so
+        // hotspot percentages always land on the same visual point of
+        // the photo regardless of device.
+        // ------------------------------------------------------------
+        function sizeRoomCanvas() {
+            const config = roomsConfig[currentRoom];
+            const ratio = (config && config.imageAspectRatio) || 16 / 9;
+
+            const sceneWidth = roomScene.clientWidth;
+            const sceneHeight = roomScene.clientHeight;
+
+            if (!sceneWidth || !sceneHeight) return;
+
+            let width = sceneHeight * ratio;
+            let height = sceneHeight;
+
+            if (width < sceneWidth) {
+                width = sceneWidth;
+                height = sceneWidth / ratio;
+            }
+
+            roomCanvas.style.width = Math.ceil(width) + "px";
+            roomCanvas.style.height = Math.ceil(height) + "px";
+        }
+
+        function centerRoomScroll() {
+            roomScene.scrollLeft = Math.max(
+                0,
+                (roomScene.scrollWidth - roomScene.clientWidth) / 2
+            );
+
+            roomScene.scrollTop = Math.max(
+                0,
+                (roomScene.scrollHeight - roomScene.clientHeight) / 2
+            );
+        }
+
+        let resizeRafPending = false;
+
+        function handleViewportChange() {
+            if (resizeRafPending) return;
+            resizeRafPending = true;
+
+            requestAnimationFrame(() => {
+                resizeRafPending = false;
+                sizeRoomCanvas();
+                centerRoomScroll();
+            });
+        }
+
+        window.addEventListener("resize", handleViewportChange);
+        window.addEventListener("orientationchange", handleViewportChange);
+
+        // ------------------------------------------------------------
+        // Flashlight effect for rooms marked `dark: true` in
+        // game/rooms.js (Basement, Attic). #flashlightOverlay is a
+        // black box with a radial-gradient "hole" that follows the
+        // player's finger/cursor — see the CSS comment above
+        // #flashlightOverlay for how the reveal itself works. This
+        // just needs to keep --flashlight-x/--flashlight-y updated.
+        //
+        // Listening on #roomScene (not the overlay, which is
+        // pointer-events: none) means this keeps working no matter
+        // how the room is scrolled/panned.
+        // ------------------------------------------------------------
+        function setFlashlightPosition(clientX, clientY) {
+            const rect = roomCanvas.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+
+            const x = ((clientX - rect.left) / rect.width) * 100;
+            const y = ((clientY - rect.top) / rect.height) * 100;
+
+            flashlightOverlay.style.setProperty("--flashlight-x", `${x}%`);
+            flashlightOverlay.style.setProperty("--flashlight-y", `${y}%`);
+        }
+
+        roomScene.addEventListener("pointermove", (event) => {
+            setFlashlightPosition(event.clientX, event.clientY);
+        });
+
+        roomScene.addEventListener("pointerdown", (event) => {
+            setFlashlightPosition(event.clientX, event.clientY);
+        });
+
+        // ------------------------------------------------------------
+        // Click-and-drag panning for mouse/trackpad users.
+        //
+        // On a phone, panning a room wider than the screen already
+        // works for free — touch gestures natively scroll any
+        // `overflow: auto` element. A mouse has no equivalent gesture,
+        // so without this, a desktop/narrow-browser player has no way
+        // to see the sides of a room at all.
+        //
+        // Only pointerType === "mouse" is handled here — touch keeps
+        // using the browser's native scrolling untouched.
+        // ------------------------------------------------------------
+        const DRAG_PAN_THRESHOLD_PX = 4;
+
+        let isPanning = false;
+        let panMoved = false;
+        let panStartX = 0;
+        let panStartY = 0;
+        let panScrollStartLeft = 0;
+        let panScrollStartTop = 0;
+
+        roomScene.addEventListener("pointerdown", (event) => {
+            if (event.pointerType !== "mouse" || event.button !== 0) return;
+
+            isPanning = true;
+            panMoved = false;
+            panStartX = event.clientX;
+            panStartY = event.clientY;
+            panScrollStartLeft = roomScene.scrollLeft;
+            panScrollStartTop = roomScene.scrollTop;
+            roomScene.classList.add("dragging");
+        });
+
+        window.addEventListener("pointermove", (event) => {
+            if (!isPanning || event.pointerType !== "mouse") return;
+
+            const deltaX = event.clientX - panStartX;
+            const deltaY = event.clientY - panStartY;
+
+            if (!panMoved && (Math.abs(deltaX) > DRAG_PAN_THRESHOLD_PX || Math.abs(deltaY) > DRAG_PAN_THRESHOLD_PX)) {
+                panMoved = true;
+            }
+
+            if (panMoved) {
+                roomScene.scrollLeft = panScrollStartLeft - deltaX;
+                roomScene.scrollTop = panScrollStartTop - deltaY;
+            }
+        });
+
+        window.addEventListener("pointerup", (event) => {
+            if (event.pointerType !== "mouse") return;
+
+            if (panMoved) {
+                // A real drag happened — swallow the click that would
+                // otherwise fire on whatever hotspot/door/item ends up
+                // under the cursor, so panning across one doesn't
+                // accidentally trigger it.
+                document.addEventListener(
+                    "click",
+                    (clickEvent) => {
+                        clickEvent.stopPropagation();
+                        clickEvent.preventDefault();
+                    },
+                    { capture: true, once: true }
+                );
+            }
+
+            isPanning = false;
+            panMoved = false;
+            roomScene.classList.remove("dragging");
+        });
+
+        function showRoomImage(room) {
+            currentRoom = room;
+
+            const config = roomsConfig[room];
+
+            roomImage.style.display = "block";
+            imageMessage.style.display = "none";
+
+            // Some rooms swap to a different image once a specific
+            // lobby flag is set (e.g. the library once its piano
+            // puzzle is solved) — see altImage/altImageFlag in
+            // game/rooms.js.
+            let imageSrc = config ? config.image : "";
+
+            if (
+                config &&
+                config.altImage &&
+                config.altImageFlag &&
+                joinedLobby &&
+                joinedLobby[config.altImageFlag]
+            ) {
+                imageSrc = config.altImage;
+            }
+
+            roomImage.src = imageSrc;
+            roomImage.alt = (config && config.label) || "Room";
+
+            if (config && config.dark) {
+                flashlightOverlay.style.display = "block";
+                flashlightOverlay.style.setProperty("--flashlight-x", "50%");
+                flashlightOverlay.style.setProperty("--flashlight-y", "50%");
+            } else {
+                flashlightOverlay.style.display = "none";
+            }
+
+            sizeRoomCanvas();
+            centerRoomScroll();
+
+            renderDoorHotspots(room);
+            renderItemHotspots(room);
+            renderCharacterHotspots(room);
+            renderCatHotspot(room);
+            updateBasementVisibility();
+            updateBasementPuzzle();
+            updateAccuseHotspotVisibility();
+            updatePianoHotspotVisibility();
+            playCrowSoundIfFirstVisit(room);
+        }
+
+        roomImage.addEventListener("error", () => {
+            imageMessage.innerHTML =
+                `No image found for <strong>${roomImage.alt}</strong>.<br><br>` +
+                `Add the file:<br>${roomImage.src.replace(window.location.origin, "")}`;
+
+            imageMessage.style.display = "flex";
+        });
+
+        function updatePhoneLobby(lobby) {
+            const me = lobby.players.find(player => player.token === playerToken);
+
+            if (!me) return;
+
+            const room = me.currentRoom || "lobby";
+            const config = roomsConfig[room];
+
+            document.getElementById("currentRoom").innerText =
+                "You are in: " + (config ? config.label : room);
+
+            roomSelect.value = room;
+            updateLockedRoomOptions();
+            showRoomImage(room);
+            updateAccuseHotspotVisibility();
+            renderVotingOverlay();
+        }
+
+        function showWaitingScreen() {
+            document.getElementById("joinScreen").style.display = "none";
+            document.getElementById("waitingScreen").style.display = "block";
+            document.getElementById("introScreen").style.display = "none";
+            document.getElementById("gameScreen").style.display = "none";
+
+            document.getElementById("waitingText").innerText =
+                "Lobby " + joinedLobby.code + " joined. Waiting for the host to start the game.";
+        }
+
+        function syncScreenToLobbyStatus(lobby) {
+            if (!lobby) return;
+
+            if (lobby.status === "ended") {
+                showEndingScreen(lobby);
+                return;
+            }
+
+            if (lobby.status === "playing") {
+                showGameScreen();
+                return;
+            }
+
+            if (lobby.status === "intro") {
+                showIntroScreen();
+                return;
+            }
+
+            showWaitingScreen();
+        }
+
+        // Tracks whether the typewriter has already been started for
+        // the CURRENT ending, so repeated lobbyUpdate broadcasts (which
+        // can keep arriving for unrelated reasons) don't restart it
+        // mid-sentence. Reset in resetToJoinScreen()/leaveLobby() so a
+        // later game gets a fresh typewriter.
+        let endingTypewriterStarted = false;
+        let currentEndingResult = null;
+
+        function showEndingScreen(lobby) {
+            document.getElementById("joinScreen").style.display = "none";
+            document.getElementById("waitingScreen").style.display = "none";
+            document.getElementById("introScreen").style.display = "none";
+            document.getElementById("gameScreen").style.display = "none";
+
+            document.getElementById("votingOverlay").style.display = "none";
+
+            currentEndingResult = lobby.endingResult;
+
+            const endingScreen = document.getElementById("endingScreen");
+
+            endingScreen.style.backgroundImage = lobby.endingBackgroundImage
+                ? `linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.8)), url("${lobby.endingBackgroundImage}")`
+                : "none";
+
+            endingScreen.style.display = "flex";
+
+            if (!endingTypewriterStarted) {
+                endingTypewriterStarted = true;
+                startEndingTypewriter(lobby.endingStoryText || "");
+            }
+        }
+
+        const ENDING_TYPING_SPEED = 32;
+        let endingStoryFullText = "";
+        let endingLetterIndex = 0;
+
+        function startEndingTypewriter(text) {
+            endingStoryFullText = text;
+            endingLetterIndex = 0;
+
+            document.getElementById("endingStoryText").textContent = "";
+
+            const verdict = document.getElementById("endingVerdict");
+            verdict.style.display = "none";
+            verdict.textContent = "";
+
+            document.getElementById("endingEndGameButton").style.display = "none";
+
+            typeNextEndingLetter();
+        }
+
+        function typeNextEndingLetter() {
+            if (endingLetterIndex >= endingStoryFullText.length) {
+                finishEndingTypewriter();
+                return;
+            }
+
+            document.getElementById("endingStoryText").textContent +=
+                endingStoryFullText[endingLetterIndex];
+
+            endingLetterIndex++;
+
+            setTimeout(typeNextEndingLetter, ENDING_TYPING_SPEED);
+        }
+
+        function finishEndingTypewriter() {
+            const verdict = document.getElementById("endingVerdict");
+
+            verdict.textContent = currentEndingResult === "good" ? "GOOD ENDING" : "BAD ENDING";
+            verdict.style.color = currentEndingResult === "good" ? "#3ddc73" : "#ff4d4d";
+            verdict.style.display = "block";
+
+            document.getElementById("endingEndGameButton").style.display = "block";
+        }
+
+        // Ends the session for EVERYONE — every phone falls back to the
+        // join screen, and the TV returns to its very first
+        // lobby-creation page. Any player can trigger this (not just
+        // the host) since the mystery is already resolved by the time
+        // this button is visible.
+        function endGameForEveryone() {
+            if (!joinedLobby) return;
+
+            socket.emit("endGameSession", {
+                code: joinedLobby.code,
+                playerToken
+            });
+        }
+
+        function showIntroScreen() {
+            document.getElementById("joinScreen").style.display = "none";
+            document.getElementById("waitingScreen").style.display = "none";
+            document.getElementById("introScreen").style.display = "flex";
+            document.getElementById("gameScreen").style.display = "none";
+
+            startPhoneIntro();
+        }
+
+        function showGameScreen() {
+            document.getElementById("joinScreen").style.display = "none";
+            document.getElementById("waitingScreen").style.display = "none";
+            document.getElementById("introScreen").style.display = "none";
+            document.getElementById("gameScreen").style.display = "block";
+
+            if (joinedLobby) {
+                updatePhoneLobby(joinedLobby);
+            }
+        }
+
+        function startPhoneIntro() {
+            if (introStarted) return;
+
+            introStarted = true;
+            typeNextPhoneLetter();
+        }
+
+        function typeNextPhoneLetter() {
+            if (letterIndex >= story.length) {
+                phoneEnterButton.style.display = "block";
+                return;
+            }
+
+            const letter = story[letterIndex];
+            phoneStoryText.textContent += letter;
+            letterIndex++;
+
+            const delay = letter === "\n" ? 450 : typingSpeed;
+            setTimeout(typeNextPhoneLetter, delay);
+        }
+
+        function enterMansion() {
+            if (!joinedLobby) return;
+
+            socket.emit("enterMansion", {
+                code: joinedLobby.code
+            });
+        }
+
+        // Generic pickup — works for any item placement defined in
+        // game/rooms.js + game/items.js. `spot` is the hotspot's
+        // position config, used to start the pickup animation from the
+        // right place on screen.
+        function pickupItem(placementId, spot) {
+            if (!joinedLobby) return;
+
+            pendingPickupSpot = spot || null;
+
+            socket.emit("pickupItem", {
+                code: joinedLobby.code,
+                playerToken,
+                itemId: placementId
+            });
+        }
+
+        function useBasementDoor() {
+            if (!joinedLobby) return;
+
+            socket.emit("useBasementDoor", {
+                code: joinedLobby.code,
+                playerToken
+            });
+        }
+
+        function moveBasementPicture() {
+            if (!joinedLobby) return;
+
+            socket.emit("moveBasementPicture", {
+                code: joinedLobby.code,
+                playerToken
+            });
+        }
+
+        function openSafe() {
+            if (!joinedLobby) return;
+
+            socket.emit("openSafe", {
+                code: joinedLobby.code,
+                playerToken
+            });
+        }
+
+        // Renders every regular door for the current room from
+        // roomsConfig[room].doors. Add/remove/rearrange doors by
+        // editing game/rooms.js — nothing to change here.
+        function renderDoorHotspots(room) {
+            doorHotspotsContainer.innerHTML = "";
+
+            const config = roomsConfig[room];
+            if (!config || !config.doors) return;
+
+            config.doors.forEach(door => {
+                // A door can optionally require a lobby flag before it's
+                // shown at all (e.g. the library's hidden passage, only
+                // visible once the piano puzzle is solved). This is
+                // separate from a room's own requiresFlag/requiresItem,
+                // which gate ENTRY regardless of which door was used.
+                if (door.requiresFlag && !joinedLobby?.[door.requiresFlag]) {
+                    return;
+                }
+
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "hotspot doorHotspot";
+                button.style.display = "block";
+                button.style.left = door.left;
+                button.style.top = door.top;
+
+                if (door.width) button.style.width = door.width;
+                if (door.height) button.style.height = door.height;
+
+                button.textContent = door.label;
+                button.onclick = () => selectRoom(door.target);
+
+                doorHotspotsContainer.appendChild(button);
+            });
+        }
+
+        // Renders a "take item" hotspot for every itemHotspot defined
+        // on the current room, but only if that placement hasn't been
+        // taken yet (by anyone) and this player doesn't already have
+        // that item. Add new pickup spots by editing game/rooms.js and
+        // game/items.js — nothing to change here.
+        //
+        // A spot with `iconHotspot: true` renders as the item's actual
+        // icon image (from itemsConfig) instead of a plain dashed text
+        // button — e.g. the skull sitting visibly in the attic.
+        function renderItemHotspots(room) {
+            itemHotspotsContainer.innerHTML = "";
+
+            const config = roomsConfig[room];
+            if (!config || !config.itemHotspots) return;
+
+            config.itemHotspots.forEach(spot => {
+                const placement = joinedLobby?.items?.[spot.placementId];
+                if (!placement) return;
+
+                const alreadyHave = inventory.some(
+                    item => item.id === placement.itemId
+                );
+
+                if (placement.takenBy || alreadyHave) return;
+
+                let element;
+
+                if (spot.iconHotspot) {
+                    const itemDetails = itemsConfig[placement.itemId];
+
+                    element = document.createElement("img");
+                    element.className = "hotspot itemIconHotspot";
+                    element.src = itemDetails ? itemDetails.icon : "";
+                    element.alt = spot.label || (itemDetails && itemDetails.name) || "Item";
+                } else {
+                    element = document.createElement("button");
+                    element.type = "button";
+                    element.className = "hotspot";
+                    element.textContent = spot.label;
+                }
+
+                element.style.left = spot.left;
+                element.style.top = spot.top;
+
+                if (spot.width) element.style.width = spot.width;
+                if (spot.height) element.style.height = spot.height;
+
+                element.onclick = () => pickupItem(spot.placementId, spot);
+
+                itemHotspotsContainer.appendChild(element);
+            });
+        }
+
+        // Renders a clickable, gently-animated image for every character
+        // standing in the current room (from characterHotspots in
+        // game/rooms.js). Tapping one opens the dialogue popup. Add new
+        // characters by editing game/characters.js + game/rooms.js —
+        // nothing to change here.
+        function renderCharacterHotspots(room) {
+            characterHotspotsContainer.innerHTML = "";
+
+            const config = roomsConfig[room];
+            if (!config || !config.characterHotspots) return;
+
+            config.characterHotspots.forEach(spot => {
+                const character = charactersConfig[spot.characterId];
+                if (!character) return;
+
+                const img = document.createElement("img");
+                img.className = "characterHotspot";
+                img.src = character.roomSprite;
+                img.alt = character.name;
+                img.style.left = spot.left;
+                img.style.top = spot.top;
+
+                if (spot.width) img.style.width = spot.width;
+                if (spot.height) img.style.height = spot.height;
+
+                // The Mysterious Person doesn't use the generic
+                // intro-line + questions dialogue — his interaction is
+                // fully bespoke, driven by the Skull item. Every other
+                // character uses the normal popup.
+                if (spot.characterId === "mysterious-person") {
+                    img.onclick = () => interactWithMysteriousPerson();
+                } else {
+                    img.onclick = () => openCharacterPopup(spot.characterId);
+                }
+
+                characterHotspotsContainer.appendChild(img);
+            });
+        }
+
+        // Son's Bedroom's cat — stays visible/clickable forever, but
+        // only makes noise the first catHotspot.maxClicks times (per
+        // player — server-tracked, see clickCatHotspot in server.js).
+        // No visual change once exhausted; it just goes quiet.
+        function renderCatHotspot(room) {
+            catHotspotContainer.innerHTML = "";
+
+            const config = roomsConfig[room];
+            const catConfig = config && config.catHotspot;
+            if (!catConfig) return;
+
+            const img = document.createElement("img");
+            img.className = "hotspot characterHotspot";
+            img.src = catConfig.image;
+            img.alt = "Cat";
+            img.style.left = catConfig.left;
+            img.style.top = catConfig.top;
+
+            if (catConfig.width) img.style.width = catConfig.width;
+            if (catConfig.height) img.style.height = catConfig.height;
+
+            img.onclick = () => clickCatHotspot();
+
+            catHotspotContainer.appendChild(img);
+        }
+
+        function clickCatHotspot() {
+            if (!joinedLobby) return;
+
+            socket.emit("clickCatHotspot", {
+                code: joinedLobby.code,
+                playerToken
+            });
+        }
+
+        socket.on("catHotspotSound", (data) => {
+            if (!data.sound || !catSoundElement) return;
+
+            if (catSoundElement.getAttribute("src") !== data.sound) {
+                catSoundElement.setAttribute("src", data.sound);
+            }
+
+            catSoundElement.currentTime = 0;
+
+            catSoundElement.play().catch(() => {
+                // Sound is optional. Browsers may block audio until interaction.
+            });
+        });
+
+        // Opens the dialogue popup on a character's intro line, and
+        // builds one button per question. Re-opening a character
+        // always starts back at their intro line.
+        function openCharacterPopup(characterId) {
+            const character = charactersConfig[characterId];
+            if (!character) return;
+
+            closeItemPopup();
+            closeItemActionSheet();
+
+            openCharacterId = characterId;
+
+            document.getElementById("characterPopupImage").src = character.closeupImage;
+            document.getElementById("characterPopupImage").alt = character.name;
+            document.getElementById("characterPopupName").textContent = character.name;
+            document.getElementById("characterDialogueText").textContent = character.introLine;
+
+            renderCharacterQuestions(character);
+
+            document.getElementById("characterPopupOverlay").style.display = "flex";
+
+            // Marks this character as a known suspect lobby-wide (shared
+            // with every player and the TV), the first time anyone opens
+            // their dialogue. Safe to send every time — the server just
+            // ignores repeats.
+            if (joinedLobby) {
+                socket.emit("interactWithCharacter", {
+                    code: joinedLobby.code,
+                    playerToken,
+                    characterId
+                });
+            }
+        }
+
+        // The Mysterious Person's entire interaction is server-driven —
+        // the server decides whether to reveal his hint (based on
+        // lobby.skullGivenBy / whether this player currently has the
+        // skull) and sends back exactly which line to show, via
+        // mysteriousPersonDialogue below. No local state to check here.
+        function interactWithMysteriousPerson() {
+            if (!joinedLobby) return;
+
+            socket.emit("interactWithMysteriousPerson", {
+                code: joinedLobby.code,
+                playerToken
+            });
+        }
+
+        socket.on("mysteriousPersonDialogue", (data) => {
+            const character = charactersConfig["mysterious-person"];
+            if (!character) return;
+
+            closeItemPopup();
+            closeItemActionSheet();
+
+            openCharacterId = "mysterious-person";
+
+            document.getElementById("characterPopupImage").src = character.closeupImage;
+            document.getElementById("characterPopupImage").alt = character.name;
+            document.getElementById("characterPopupName").textContent = character.name;
+            document.getElementById("characterDialogueText").textContent = data.line;
+
+            // He has no questions to ask — the list is just left empty.
+            document.getElementById("characterQuestionList").innerHTML = "";
+
+            document.getElementById("characterPopupOverlay").style.display = "flex";
+
+            if (data.gaveSkull) {
+                animateSkullGiven(data.skullIcon);
+            }
+        });
+
+        // Reuses the same "flying icon" visual language as item pickup,
+        // but flying from the inventory bar up toward the character
+        // instead — a simple, direction-agnostic "gone from your
+        // inventory" cue that works regardless of exactly where the
+        // character sprite sits on screen.
+        function animateSkullGiven(iconPath) {
+            if (!iconPath) return;
+
+            const flyIcon = document.createElement("img");
+            flyIcon.className = "skull-fly";
+            flyIcon.src = iconPath;
+
+            document.body.appendChild(flyIcon);
+
+            setTimeout(() => {
+                flyIcon.remove();
+            }, 950);
+        }
+
+        // Plays once per browser session (not persisted — a page
+        // refresh will play it again), the first time THIS player
+        // personally shows the Backyard room.
+        let hasPlayedCrowSound = false;
+
+        function playCrowSoundIfFirstVisit(room) {
+            if (room !== "backyard" || hasPlayedCrowSound || !crowSoundElement) return;
+
+            hasPlayedCrowSound = true;
+
+            crowSoundElement.currentTime = 0;
+
+            crowSoundElement.play().catch(() => {
+                // Sound is optional. Browsers may block audio until interaction.
+            });
+        }
+
+        function renderCharacterQuestions(character) {
+            const list = document.getElementById("characterQuestionList");
+            list.innerHTML = "";
+
+            (character.questions || []).forEach(questionEntry => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "characterQuestionButton";
+                button.textContent = questionEntry.question;
+
+                button.onclick = () => {
+                    document.getElementById("characterDialogueText").textContent =
+                        questionEntry.answer;
+                };
+
+                list.appendChild(button);
+            });
+        }
+
+        function closeCharacterPopup() {
+            openCharacterId = null;
+            document.getElementById("characterPopupOverlay").style.display = "none";
+        }
+
+        function updateBasementVisibility() {
+            if (!joinedLobby) return;
+
+            const unlocked = joinedLobby.basementUnlocked === true;
+
+            const me = joinedLobby.players.find(
+                player => player.token === playerToken
+            );
+
+            const room = me?.currentRoom;
+
+            if (room === "basement-stairway") {
+                basementDoorHotspot.style.display = "block";
+
+                basementDoorHotspot.textContent = unlocked
+                    ? "Enter Basement"
+                    : "Locked Basement Door";
+            } else {
+                basementDoorHotspot.style.display = "none";
+            }
+        }
+
+        // ------------------------------------------------------------
+        // Piano puzzle (Library room).
+        //
+        // 8 keys spanning one octave: C D E F G A B C. Notes are
+        // synthesized live with the Web Audio API — no sound files
+        // needed for the keys themselves. Correctness is checked
+        // key-by-key against roomsConfig.library.piano.sequence for
+        // instant feedback; once a full match is assembled, it's sent
+        // to the server for the authoritative check (submitPianoSequence
+        // in server.js), which flips the shared libraryPianoSolved flag.
+        // ------------------------------------------------------------
+        const PIANO_KEYS = [
+            { id: "c1", label: "C", frequency: 261.63 },
+            { id: "d1", label: "D", frequency: 293.66 },
+            { id: "e1", label: "E", frequency: 329.63 },
+            { id: "f1", label: "F", frequency: 349.23 },
+            { id: "g1", label: "G", frequency: 392.00 },
+            { id: "a1", label: "A", frequency: 440.00 },
+            { id: "b1", label: "B", frequency: 493.88 },
+            { id: "c2", label: "C", frequency: 523.25 }
+        ];
+
+        let pianoAudioContext = null;
+        let pianoAttempt = [];
+
+        function getPianoAudioContext() {
+            if (!pianoAudioContext) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                pianoAudioContext = new AudioContextClass();
+            }
+
+            return pianoAudioContext;
+        }
+
+        function playPianoTone(frequency) {
+            try {
+                const ctx = getPianoAudioContext();
+                const oscillator = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+
+                oscillator.type = "sine";
+                oscillator.frequency.value = frequency;
+
+                gainNode.gain.setValueAtTime(0.0001, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.9);
+
+                oscillator.connect(gainNode);
+                gainNode.connect(ctx.destination);
+
+                oscillator.start();
+                oscillator.stop(ctx.currentTime + 0.9);
+            } catch (err) {
+                // Web Audio unavailable/blocked — keys just stay silent,
+                // the puzzle itself still works fine.
+            }
+        }
+
+        function playPassageOpenSound() {
+            if (!passageOpenSoundElement) return;
+
+            passageOpenSoundElement.currentTime = 0;
+
+            passageOpenSoundElement.play().catch(() => {
+                // Sound is optional. Browsers may block audio until interaction.
+            });
+        }
+
+        // Only clickable while standing in the Library and the puzzle
+        // isn't already solved.
+        function updatePianoHotspotVisibility() {
+            if (!joinedLobby || !pianoHotspot) return;
+
+            const canPlay =
+                currentRoom === "library" &&
+                !joinedLobby.libraryPianoSolved;
+
+            pianoHotspot.style.display = canPlay ? "block" : "none";
+        }
+
+        function openPianoGame() {
+            if (!joinedLobby) return;
+
+            pianoAttempt = [];
+            renderPianoKeys();
+
+            document.getElementById("pianoOverlay").style.display = "flex";
+        }
+
+        function closePianoGame() {
+            pianoAttempt = [];
+            document.getElementById("pianoOverlay").style.display = "none";
+        }
+
+        function renderPianoKeys() {
+            const container = document.getElementById("pianoKeys");
+            container.innerHTML = "";
+
+            PIANO_KEYS.forEach(key => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "pianoKey";
+                button.textContent = key.label;
+                button.onclick = () => pressPianoKey(key);
+
+                container.appendChild(button);
+            });
+        }
+
+        function pressPianoKey(key) {
+            playPianoTone(key.frequency);
+
+            const target = roomsConfig.library?.piano?.sequence || [];
+            const nextIndex = pianoAttempt.length;
+
+            if (target[nextIndex] === key.id) {
+                pianoAttempt.push(key.id);
+            } else if (target[0] === key.id) {
+                // Wrong note — but this one could be a fresh, valid start.
+                pianoAttempt = [key.id];
+            } else {
+                pianoAttempt = [];
+            }
+
+            if (target.length && pianoAttempt.length === target.length) {
+                submitPianoSequence();
+            }
+        }
+
+        function submitPianoSequence() {
+            if (!joinedLobby) return;
+
+            socket.emit("submitPianoSequence", {
+                code: joinedLobby.code,
+                playerToken,
+                sequence: pianoAttempt
+            });
+
+            pianoAttempt = [];
+        }
+
+        socket.on("pianoSequenceCorrect", () => {
+            closePianoGame();
+            playPassageOpenSound();
+        });
+
+        socket.on("pianoSequenceWrong", () => {
+            pianoAttempt = [];
+        });
+
+        // ------------------------------------------------------------
+        // End-game accusation + voting.
+        // ------------------------------------------------------------
+
+        const accuseHotspot = document.getElementById("accuseHotspot");
+
+        // Only clickable while standing in the Lobby room, no vote is
+        // already underway, and the game hasn't already ended.
+        function updateAccuseHotspotVisibility() {
+            if (!joinedLobby || !accuseHotspot) return;
+
+            const me = joinedLobby.players.find(
+                player => player.token === playerToken
+            );
+
+            const canAccuse =
+                me?.currentRoom === "lobby" &&
+                !joinedLobby.accusation &&
+                joinedLobby.status !== "ended";
+
+            accuseHotspot.style.display = canAccuse ? "block" : "none";
+        }
+
+        // Every suspect button (accusation menu AND voting overlay) is
+        // built from the same source: known/interacted characters only.
+        function getKnownSuspects() {
+            if (!joinedLobby) return [];
+
+            const interacted = joinedLobby.interactedCharacters || {};
+
+            return Object.keys(interacted)
+                .filter(characterId => interacted[characterId] && charactersConfig[characterId])
+                .map(characterId => charactersConfig[characterId]);
+        }
+
+        function openAccusationMenu() {
+            if (!joinedLobby) return;
+
+            const list = document.getElementById("accusationMenuList");
+            const suspects = getKnownSuspects();
+
+            if (!suspects.length) {
+                list.innerHTML = '<div class="noSuspectsText">No suspects</div>';
+            } else {
+                list.innerHTML = "";
+
+                suspects.forEach(character => {
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "suspectButton";
+                    button.textContent = character.name;
+                    button.onclick = () => chooseAccusation(character.id);
+
+                    list.appendChild(button);
+                });
+            }
+
+            document.getElementById("accusationMenuOverlay").style.display = "flex";
+        }
+
+        function closeAccusationMenu() {
+            document.getElementById("accusationMenuOverlay").style.display = "none";
+        }
+
+        function chooseAccusation(characterId) {
+            if (!joinedLobby) return;
+
+            socket.emit("startAccusation", {
+                code: joinedLobby.code,
+                playerToken,
+                characterId
+            });
+
+            closeAccusationMenu();
+        }
+
+        function castVote(characterId) {
+            if (!joinedLobby) return;
+
+            socket.emit("castVote", {
+                code: joinedLobby.code,
+                playerToken,
+                characterId
+            });
+        }
+
+        // Same outcome as a tied vote — clears the accusation with no
+        // ending, on every player's screen and the TV.
+        function cancelVoting() {
+            if (!joinedLobby) return;
+
+            socket.emit("cancelAccusation", {
+                code: joinedLobby.code,
+                playerToken
+            });
+        }
+
+        // Shown to every player for as long as joinedLobby.accusation
+        // is set. Rebuilt on every lobbyUpdate so vote highlights and
+        // (eventually) live results stay in sync automatically.
+        function renderVotingOverlay() {
+            const overlay = document.getElementById("votingOverlay");
+            if (!joinedLobby) return;
+
+            const accusation = joinedLobby.accusation;
+
+            if (!accusation) {
+                overlay.style.display = "none";
+                return;
+            }
+
+            document.getElementById("votingAccuserLine").textContent =
+                `${accusation.accuserName} is making an accusation`;
+
+            const myVote = accusation.votes ? accusation.votes[playerToken] : null;
+            const list = document.getElementById("votingList");
+            list.innerHTML = "";
+
+            getKnownSuspects().forEach(character => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "suspectButton";
+
+                if (myVote === character.id) {
+                    button.classList.add("votedFor");
+                }
+
+                button.textContent = character.name;
+                button.onclick = () => castVote(character.id);
+
+                list.appendChild(button);
+            });
+
+            overlay.style.display = "flex";
+        }
+
+        function updateBasementPuzzle() {
+            if (!joinedLobby) return;
+
+            const me = joinedLobby.players.find(
+                player => player.token === playerToken
+            );
+
+            const room = me?.currentRoom;
+            const pictureMoved = joinedLobby.basementPictureMoved === true;
+
+            if (room !== "basement") {
+                basementPictureHotspot.style.display = "none";
+                safeHotspot.style.display = "none";
+                return;
+            }
+
+            basementPictureHotspot.style.display = "block";
+
+            if (pictureMoved) {
+                basementPictureHotspot.classList.add("pictureMoved");
+                safeHotspot.style.display = "block";
+            } else {
+                basementPictureHotspot.classList.remove("pictureMoved");
+                safeHotspot.style.display = "none";
+            }
+        }
+
+        function showPickupMessage(itemName) {
+            const message = document.getElementById("pickupMessage");
+
+            message.textContent = `You've picked up ${itemName}`;
+            message.style.display = "block";
+
+            setTimeout(() => {
+                message.style.display = "none";
+            }, 1800);
+        }
+
+        function animatePickup(iconPath) {
+            const flyIcon = document.createElement("img");
+            flyIcon.className = "pickup-fly";
+            flyIcon.src = iconPath;
+
+            flyIcon.style.left = (pendingPickupSpot && pendingPickupSpot.left) || "50%";
+            flyIcon.style.top = (pendingPickupSpot && pendingPickupSpot.top) || "50%";
+
+            roomCanvas.appendChild(flyIcon);
+
+            setTimeout(() => {
+                flyIcon.remove();
+            }, 900);
+        }
+
+        function renderInventory() {
+            const slots = document.getElementById("inventorySlots");
+            const maxSlots = 8;
+
+            let html = "";
+
+            for (let index = 0; index < maxSlots; index++) {
+                const item = inventory[index];
+
+                if (item) {
+                    html += `
+                        <div
+                            class="inventorySlot filled"
+                            title="${escapeHtml(item.name)}"
+                            onclick="openItemActionSheet('${item.id}')"
+                        >
+                            <img src="${item.icon}" alt="${escapeHtml(item.name)}">
+                        </div>
+                    `;
+                } else {
+                    html += `<div class="inventorySlot"></div>`;
+                }
+            }
+
+            slots.innerHTML = html;
+        }
+
+        // Tracks which character's dialogue popup is currently open.
+        let openCharacterId = null;
+
+        // Tracks which item the action sheet ("Inspect" / "Give item
+        // to:") is currently showing, so Inspect and the give-to
+        // buttons know which item they're acting on.
+        let actionSheetItemId = null;
+
+        // Tapping a filled inventory slot opens this first, rather
+        // than jumping straight to the inspect view — from here the
+        // player picks Inspect (see openItemPopup) or hands it to
+        // another player in the lobby (see giveItemTo).
+        function openItemActionSheet(itemId) {
+            const item = inventory.find(invItem => invItem.id === itemId);
+            if (!item) return;
+
+            closeCharacterPopup();
+            closeItemPopup();
+
+            actionSheetItemId = itemId;
+
+            document.getElementById("itemActionSheetName").textContent = item.name;
+            renderGiveItemPlayerList();
+
+            document.getElementById("itemActionSheetOverlay").style.display = "flex";
+        }
+
+        function renderGiveItemPlayerList() {
+            const list = document.getElementById("itemActionSheetPlayerList");
+            list.innerHTML = "";
+
+            const otherPlayers = (joinedLobby?.players || []).filter(
+                player => player.token !== playerToken
+            );
+
+            if (!otherPlayers.length) {
+                list.innerHTML =
+                    '<div class="itemActionSheetEmpty">No other players to give this to.</div>';
+                return;
+            }
+
+            otherPlayers.forEach(otherPlayer => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "itemActionButton";
+                button.textContent = otherPlayer.name;
+                button.onclick = () => giveItemTo(otherPlayer.token);
+
+                list.appendChild(button);
+            });
+        }
+
+        function inspectFromActionSheet() {
+            if (!actionSheetItemId) return;
+
+            const itemId = actionSheetItemId;
+            closeItemActionSheet();
+            openItemPopup(itemId);
+        }
+
+        function giveItemTo(toPlayerToken) {
+            if (!joinedLobby || !actionSheetItemId) return;
+
+            socket.emit("giveItem", {
+                code: joinedLobby.code,
+                playerToken,
+                itemId: actionSheetItemId,
+                toPlayerToken
+            });
+
+            closeItemActionSheet();
+        }
+
+        function closeItemActionSheet() {
+            actionSheetItemId = null;
+            document.getElementById("itemActionSheetOverlay").style.display = "none";
+        }
+
+        function openItemPopup(itemId) {
+            const item = inventory.find(invItem => invItem.id === itemId);
+            if (!item) return;
+
+            closeCharacterPopup();
+            closeItemActionSheet();
+
+            document.getElementById("itemPopupImage").src = item.popupImage || item.icon;
+            document.getElementById("itemPopupImage").alt = item.name;
+            document.getElementById("itemPopupName").textContent = item.name;
+            document.getElementById("itemPopupDescription").textContent = item.description || "";
+
+            document.getElementById("itemPopupOverlay").style.display = "flex";
+        }
+
+        function closeItemPopup() {
+            document.getElementById("itemPopupOverlay").style.display = "none";
+        }
+
+        function showGameMessage(message) {
+            const messageBox = document.getElementById("gameMessage");
+
+            clearTimeout(gameMessageTimer);
+
+            messageBox.textContent = message;
+            messageBox.style.display = "block";
+
+            gameMessageTimer = setTimeout(() => {
+                messageBox.style.display = "none";
+            }, 3200);
+        }
+
+        function showDoorSpotMessage(message) {
+            const messageBox = document.getElementById("gameMessage");
+            const hotspotRect = basementDoorHotspot.getBoundingClientRect();
+
+            clearTimeout(gameMessageTimer);
+
+            messageBox.textContent = message;
+            messageBox.style.display = "block";
+
+            messageBox.style.position = "fixed";
+            messageBox.style.left =
+                Math.min(
+                    window.innerWidth - 180,
+                    Math.max(180, hotspotRect.left + hotspotRect.width / 2)
+                ) + "px";
+
+            messageBox.style.bottom = "auto";
+            messageBox.style.top =
+                Math.max(12, hotspotRect.top - 82) + "px";
+
+            gameMessageTimer = setTimeout(() => {
+                messageBox.style.display = "none";
+                messageBox.style.left = "50%";
+                messageBox.style.top = "auto";
+                messageBox.style.bottom =
+                    "calc(var(--inventory-height) + 25px)";
+            }, 3200);
+        }
+
+        function openSafeKeypad() {
+            keypadCode = "";
+            keypadLocked = false;
+            keypadDisplay.classList.remove("error");
+            updateKeypadDisplay();
+            safeKeypadOverlay.style.display = "flex";
+        }
+
+        function closeSafeKeypad() {
+            safeKeypadOverlay.style.display = "none";
+            keypadCode = "";
+            keypadLocked = false;
+        }
+
+        function playKeypadSound() {
+            if (!keypadSound) return;
+
+            keypadSound.currentTime = 0;
+
+            keypadSound.play().catch(() => {
+                // Sound is optional. Browsers may block audio until interaction.
+            });
+        }
+
+        // Plays the sound for whichever item was just picked up. The
+        // server sends the correct path already (each item's
+        // pickupSound in game/items.js, or the shared default) — this
+        // just needs to actually play it.
+        function playPickupSound(soundPath) {
+            if (!pickupSoundElement || !soundPath) return;
+
+            if (pickupSoundElement.getAttribute("src") !== soundPath) {
+                pickupSoundElement.setAttribute("src", soundPath);
+            }
+
+            pickupSoundElement.currentTime = 0;
+
+            pickupSoundElement.play().catch(() => {
+                // Sound is optional. Browsers may block audio until interaction.
+            });
+        }
+
+        function pressKeypadNumber(number) {
+            if (keypadLocked) return;
+            if (keypadCode.length >= 8) return;
+
+            playKeypadSound();
+
+            keypadCode += number;
+            updateKeypadDisplay();
+        }
+
+        function clearKeypad() {
+            if (keypadLocked) return;
+
+            playKeypadSound();
+
+            keypadCode = "";
+            updateKeypadDisplay();
+        }
+
+        function updateKeypadDisplay() {
+            keypadDisplay.textContent = keypadCode || "----";
+        }
+
+        function submitKeypadCode() {
+            if (!joinedLobby || keypadLocked) return;
+
+            playKeypadSound();
+
+            if (!keypadCode) {
+                keypadDisplay.textContent = "ERROR";
+                keypadDisplay.classList.add("error");
+
+                setTimeout(() => {
+                    keypadDisplay.classList.remove("error");
+                    updateKeypadDisplay();
+                }, 900);
+
+                return;
+            }
+
+            keypadLocked = true;
+
+            socket.emit("submitSafeCode", {
+                code: joinedLobby.code,
+                playerToken,
+                enteredCode: keypadCode
+            });
+        }
+
+        function leaveLobby() {
+            if (joinedLobby) {
+                socket.emit("leaveLobby", {
+                    code: joinedLobby.code,
+                    playerToken
+                });
+            }
+
+            joinedLobby = null;
+            inventory = [];
+            closeItemPopup();
+            closeItemActionSheet();
+            closeCharacterPopup();
+            closeAccusationMenu();
+            closePianoGame();
+            document.getElementById("votingOverlay").style.display = "none";
+            document.getElementById("endingScreen").style.display = "none";
+            endingTypewriterStarted = false;
+            renderInventory();
+            forgetSession();
+
+            document.getElementById("gameScreen").style.display = "none";
+            document.getElementById("joinScreen").style.display = "block";
+            document.getElementById("status").innerText = "You left the lobby.";
+        }
+
+        function resetToJoinScreen(message) {
+            joinedLobby = null;
+            inventory = [];
+            introStarted = false;
+            letterIndex = 0;
+
+            phoneStoryText.textContent = "";
+            phoneEnterButton.style.display = "none";
+
+            closeSafeKeypad();
+            closeItemPopup();
+            closeItemActionSheet();
+            closeCharacterPopup();
+            closeAccusationMenu();
+            closePianoGame();
+            document.getElementById("votingOverlay").style.display = "none";
+            document.getElementById("endingScreen").style.display = "none";
+            endingTypewriterStarted = false;
+            renderInventory();
+            forgetSession();
+
+            document.getElementById("waitingScreen").style.display = "none";
+            document.getElementById("introScreen").style.display = "none";
+            document.getElementById("gameScreen").style.display = "none";
+            document.getElementById("joinScreen").style.display = "block";
+
+            document.getElementById("status").innerText =
+                message || "You left the lobby.";
+        }
+
+        function escapeHtml(text) {
+            const element = document.createElement("div");
+            element.textContent = text;
+            return element.innerHTML;
+        }
+    </script>
+</body>
+</html>

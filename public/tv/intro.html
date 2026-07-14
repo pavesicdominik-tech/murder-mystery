@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Murder Mystery — Intro</title>
+
+    <style>
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        body {
+            background: black;
+            color: #f2e5c4;
+            font-family: "Courier New", Courier, monospace;
+        }
+
+        #intro {
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            background-image:
+                linear-gradient(rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0.75)),
+                url("/images/intro-background.png");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 3s ease;
+        }
+
+        #textBox {
+            width: min(900px, 82vw);
+            min-height: 260px;
+            padding: 35px;
+            box-sizing: border-box;
+            background: rgba(0, 0, 0, 0.42);
+            border: 1px solid rgba(242, 229, 196, 0.25);
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+            text-align: center;
+        }
+
+        #storyText {
+            margin: 0;
+            font-size: clamp(24px, 3vw, 44px);
+            line-height: 1.55;
+            white-space: pre-wrap;
+            text-shadow: 2px 2px 4px black;
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 14px;
+            height: 1.1em;
+            margin-left: 6px;
+            vertical-align: -0.15em;
+            background: #f2e5c4;
+            animation: blink 0.8s steps(1) infinite;
+        }
+
+        #enterButton {
+            display: none;
+            margin-top: 35px;
+            padding: 15px 28px;
+            border: 1px solid rgba(242, 229, 196, 0.75);
+            background: rgba(0, 0, 0, 0.65);
+            color: #f2e5c4;
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 22px;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: background 0.25s ease, transform 0.25s ease;
+        }
+
+        #enterButton:hover {
+            background: rgba(242, 229, 196, 0.2);
+            transform: scale(1.04);
+        }
+
+        #connectionStatus {
+            position: absolute;
+            bottom: 18px;
+            right: 22px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            opacity: 0.55;
+        }
+
+        @keyframes blink {
+            50% {
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="intro">
+        <div id="textBox">
+            <p id="storyText"></p><span class="cursor"></span>
+
+            <button id="enterButton" onclick="enterMansion()">
+                Enter the Mansion
+            </button>
+        </div>
+    </div>
+
+    <div id="connectionStatus">Connecting…</div>
+
+    <audio id="typeSound" src="/sounds/typewriter.mp3"></audio>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const intro = document.getElementById("intro");
+        const storyText = document.getElementById("storyText");
+        const typeSound = document.getElementById("typeSound");
+        const enterButton = document.getElementById("enterButton");
+        const connectionStatus = document.getElementById("connectionStatus");
+
+        let tvSessionId = localStorage.getItem("tvSessionId");
+        let lobbyRestored = false;
+        let currentLobby = null;
+
+        if (!tvSessionId) {
+            window.location.href = "/tv/";
+        }
+
+        socket.on("connect", () => {
+            connectionStatus.innerText = "Connecting to game…";
+
+            socket.emit("join", {
+                type: "tv",
+                tvSessionId
+            });
+
+            // If the server does not restore a lobby, this page was opened directly.
+            setTimeout(() => {
+                if (!lobbyRestored) {
+                    window.location.href = "/tv/";
+                }
+            }, 1200);
+        });
+
+        socket.on("lobbyCreated", (lobby) => {
+            lobbyRestored = true;
+            currentLobby = lobby;
+            connectionStatus.innerText = "Lobby " + lobby.code + " connected";
+
+            if (lobby.status === "playing") {
+                window.location.href = "/tv/game.html";
+                return;
+            }
+
+            startIntro();
+        });
+
+        socket.on("lobbyUpdate", (lobby) => {
+            if (currentLobby && lobby.code !== currentLobby.code) return;
+
+            currentLobby = lobby;
+
+            if (lobby.status === "playing") {
+                window.location.href = "/tv/game.html";
+            }
+        });
+
+        socket.on("mansionEntered", () => {
+            window.location.href = "/tv/game.html";
+        });
+
+        socket.on("disconnect", () => {
+            connectionStatus.innerText = "Reconnecting…";
+        });
+
+        const story = [
+            "October 31st, 1998.",
+            "",
+            "You have been invited to an isolated mansion.",
+            "Tonight, someone will not leave alive.",
+            "",
+            "Find the truth before the killer finds you."
+        ].join("\n");
+
+        let letterIndex = 0;
+        const typingSpeed = 42;
+        let introStarted = false;
+
+        function startIntro() {
+            if (introStarted) return;
+
+            introStarted = true;
+
+            setTimeout(() => {
+                intro.style.opacity = "1";
+            }, 150);
+
+            setTimeout(() => {
+                typeNextLetter();
+            }, 1600);
+        }
+
+        function typeNextLetter() {
+            if (letterIndex >= story.length) {
+                enterButton.style.display = "inline-block";
+                return;
+            }
+
+            const letter = story[letterIndex];
+            storyText.textContent += letter;
+            letterIndex++;
+
+            if (letter !== " " && letter !== "\n") {
+                typeSound.currentTime = 0;
+                typeSound.play().catch(() => {});
+            }
+
+            const delay = letter === "\n" ? 450 : typingSpeed;
+            setTimeout(typeNextLetter, delay);
+        }
+
+        function enterMansion() {
+            if (!currentLobby) return;
+
+            socket.emit("enterMansion", {
+                code: currentLobby.code
+            });
+        }
+    </script>
+</body>
+</html>

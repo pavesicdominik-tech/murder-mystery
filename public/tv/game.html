@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Murder Mystery — Mansion Map</title>
+
+    <style>
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #111;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+
+        #mapScreen {
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            background: #111;
+        }
+
+        #mapWrap {
+            position: relative;
+            width: min(95vw, 1100px);
+            /* Must match mansion-map.png's real aspect ratio (1659x948
+               = 1.75). A mismatch here causes object-fit: contain to
+               letterbox the image, which throws off every player
+               marker's % position — same root cause as the phone's
+               hotspot drift bug. If you replace this image, update
+               this ratio to match. */
+            aspect-ratio: 1659 / 948;
+        }
+
+        #mapImage {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .playerMarker {
+            position: absolute;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 7px 10px;
+            border: 2px solid white;
+            border-radius: 20px;
+            background: rgba(110, 20, 20, 0.92);
+            color: white;
+            font-size: clamp(11px, 1.2vw, 17px);
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+            box-shadow: 0 2px 7px black;
+            transform: translate(-50%, -50%);
+            transition: left 0.35s ease, top 0.35s ease;
+            white-space: nowrap;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 15px;
+            right: 20px;
+            opacity: 0.65;
+            font-size: 14px;
+        }
+
+        #settingsWrap {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            z-index: 20;
+            font-family: Arial, sans-serif;
+        }
+
+        #notificationFeed {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: min(340px, 60vw);
+            pointer-events: none;
+        }
+
+        .notificationToast {
+            padding: 10px 14px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(12, 8, 8, 0.92);
+            color: #f2e5c4;
+            font-size: 14px;
+            line-height: 1.4;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+            transition: opacity 0.4s ease;
+        }
+
+        .notificationToast.entering {
+            animation: notificationFadeIn 0.3s ease;
+        }
+
+        @keyframes notificationFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+
+            to {
+                transform: translateY(0);
+            }
+        }
+
+        #settingsButton {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            background: rgba(0, 0, 0, 0.72);
+            color: white;
+            font-size: 23px;
+            cursor: pointer;
+        }
+
+        #settingsMenu {
+            display: none;
+            width: min(280px, 82vw);
+            margin-top: 8px;
+            padding: 12px;
+            background: rgba(12, 8, 8, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+        }
+
+        #settingsMenu.open {
+            display: block;
+        }
+
+        .settingsTitle {
+            margin-bottom: 10px;
+            color: #f2e5c4;
+            font-size: 13px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .settingsPlayer {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .settingsPlayerName {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .kickButton,
+        .exitButton,
+        .confirmExitButton,
+        .cancelExitButton {
+            flex: 0 0 auto;
+            padding: 6px 10px;
+            border: 1px solid #b58c5a;
+            background: #4d1717;
+            color: white;
+            cursor: pointer;
+        }
+
+        .exitButton {
+            width: 100%;
+            margin-top: 16px;
+            padding: 10px;
+            background: #6b1515;
+            border-color: #d69b70;
+            text-align: left;
+        }
+
+        #exitConfirm {
+            display: none;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        #exitConfirm.open {
+            display: block;
+        }
+
+        .exitWarning {
+            margin: 0 0 10px;
+            line-height: 1.4;
+            color: #f2e5c4;
+            font-size: 14px;
+        }
+
+        .exitActions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .confirmExitButton {
+            background: #8d1717;
+        }
+
+        .cancelExitButton {
+            background: #333;
+            border-color: rgba(255, 255, 255, 0.35);
+        }
+
+        /* ---- "Accuse" button (starts a group vote directly) ---- */
+
+        #suspectListWrap {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            z-index: 20;
+            font-family: Arial, sans-serif;
+        }
+
+        #suspectListButton {
+            padding: 12px 18px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            background: rgba(90, 20, 20, 0.85);
+            color: white;
+            font-size: 15px;
+            letter-spacing: 1px;
+            cursor: pointer;
+        }
+
+        /* Shown directly above the Accuse button (e.g. "No suspects
+           yet.") — bigger and more visible than the old status-line
+           text, which used to overlap the button and go unnoticed. */
+        #accuseErrorBanner {
+            display: none;
+            position: absolute;
+            bottom: 68px;
+            right: 16px;
+            z-index: 21;
+            max-width: min(320px, 60vw);
+            padding: 12px 16px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            background: rgba(120, 25, 25, 0.95);
+            color: white;
+            font-size: 17px;
+            font-weight: bold;
+            text-align: right;
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6);
+        }
+
+        /* ---- Mute button (shared look with tv/index.html) ---- */
+
+        #muteButton {
+            position: absolute;
+            top: 16px;
+            right: 70px;
+            z-index: 21;
+            width: 42px;
+            height: 42px;
+            padding: 0;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            background: rgba(0, 0, 0, 0.55);
+            color: white;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        /* ---- Voting popup over the map ---- */
+
+        #votingPopup {
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 30;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.55);
+        }
+
+        #votingPopupBox {
+            width: min(420px, 85vw);
+            padding: 24px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(12, 8, 8, 0.97);
+            box-shadow: 0 15px 50px black;
+            text-align: center;
+            color: #f2e5c4;
+        }
+
+        #votingPopupAccuser {
+            margin-bottom: 16px;
+            font-size: 19px;
+            letter-spacing: 1px;
+        }
+
+        #votingPopupTally {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 14px;
+            text-align: left;
+        }
+
+        .votingPopupRow {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 4px;
+            font-size: 15px;
+        }
+
+        #votingPopupProgress {
+            margin-bottom: 16px;
+            font-size: 13px;
+            letter-spacing: 1px;
+            color: rgba(242, 229, 196, 0.7);
+        }
+
+        #votingPopupCancel {
+            padding: 10px 16px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            background: rgba(40, 40, 40, 0.9);
+            color: #f2e5c4;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        /* ---- Tie result banner ---- */
+
+        #voteResultBanner {
+            display: none;
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            z-index: 40;
+            transform: translateX(-50%);
+            padding: 12px 20px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(90, 20, 20, 0.92);
+            color: #f2e5c4;
+            font-size: 16px;
+            text-align: center;
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+        }
+
+        /* ---- Ending screen ---- */
+
+        #endingScreen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1500;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            background-color: #0a0505;
+            background-size: cover;
+            background-position: center;
+            text-align: center;
+        }
+
+        #endingBox {
+            width: min(760px, 100%);
+            padding: 40px 44px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(242, 229, 196, 0.25);
+        }
+
+        #endingStoryText {
+            margin: 0;
+            min-height: 200px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 26px;
+            line-height: 1.55;
+            color: #f2e5c4;
+            white-space: pre-wrap;
+            text-shadow: 2px 2px 4px black;
+            text-align: left;
+        }
+
+        #endingVerdict {
+            display: none;
+            margin-top: 28px;
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 54px;
+            font-weight: bold;
+            letter-spacing: 4px;
+            text-shadow: 0 0 24px rgba(0, 0, 0, 0.6);
+        }
+
+        #endingEndGameButton {
+            display: none;
+            margin-top: 30px;
+            padding: 16px 34px;
+            border: 1px solid rgba(242, 229, 196, 0.75);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.65);
+            color: #f2e5c4;
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 18px;
+            letter-spacing: 1px;
+            cursor: pointer;
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 12px;
+            height: 1.1em;
+            margin-left: 5px;
+            vertical-align: -0.15em;
+            background: #f2e5c4;
+            animation: blink 0.8s steps(1) infinite;
+        }
+
+        @keyframes blink {
+            50% {
+                opacity: 0;
+            }
+        }
+
+        #loading {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 24px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="loading">Connecting to mansion...</div>
+
+<div id="mapScreen">
+    <button id="muteButton" type="button" onclick="toggleMute()" aria-label="Toggle sound"></button>
+
+    <div id="settingsWrap">
+        <button id="settingsButton" onclick="toggleSettings()" title="Settings">⚙</button>
+
+        <div id="settingsMenu">
+            <div class="settingsTitle">Remove Player</div>
+            <div id="settingsPlayers"></div>
+
+            <button class="exitButton" onclick="showExitConfirmation()">Exit Game</button>
+
+            <div id="exitConfirm">
+                <p class="exitWarning">
+                    Are you sure? This will end the game for every connected player.
+                </p>
+
+                <div class="exitActions">
+                    <button class="confirmExitButton" onclick="confirmExitGame()">Yes, End Game</button>
+                    <button class="cancelExitButton" onclick="hideExitConfirmation()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!--
+        Starts an accusation vote for the whole table at once — a
+        group vote seeded with no votes, as opposed to a player-started
+        accusation from their phone (Lobby room hotspot), which seeds
+        the accuser's own vote. Only enabled once there's at least one
+        known suspect.
+    -->
+    <div id="suspectListWrap">
+        <div id="accuseErrorBanner"></div>
+        <button id="suspectListButton" onclick="triggerGroupAccusation()">Accuse</button>
+    </div>
+
+    <div id="mapWrap">
+        <img id="mapImage" src="/images/mansion-map.png" alt="Mansion map">
+    </div>
+
+    <!--
+        Shown for as long as an accusation is active on the server
+        (lobby.accusation), with a live vote tally per suspect. The
+        Cancel button here does the same thing a tied vote does —
+        clears the accusation with no ending, on every screen.
+    -->
+    <div id="votingPopup">
+        <div id="votingPopupBox">
+            <div id="votingPopupAccuser"></div>
+            <div id="votingPopupTally"></div>
+            <div id="votingPopupProgress"></div>
+            <button id="votingPopupCancel" type="button" onclick="cancelGroupVote()">Cancel</button>
+        </div>
+    </div>
+
+    <div id="voteResultBanner"></div>
+
+    <div id="notificationFeed"></div>
+
+    <div id="status">Connecting...</div>
+</div>
+
+<div id="endingScreen">
+    <div id="endingBox">
+        <p id="endingStoryText"></p><span class="cursor"></span>
+        <div id="endingVerdict"></div>
+        <button
+            type="button"
+            id="endingEndGameButton"
+            onclick="endGameForEveryoneTv()"
+            style="display: none;"
+        >End Game</button>
+    </div>
+</div>
+
+<audio id="votingMusic" src="/sounds/voting.mp3" loop></audio>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+
+    const tvSessionId = localStorage.getItem("tvSessionId");
+    let lobbyRestored = false;
+    let currentLobby = null;
+
+    const loading = document.getElementById("loading");
+    const mapScreen = document.getElementById("mapScreen");
+    const status = document.getElementById("status");
+    const mapWrap = document.getElementById("mapWrap");
+    const settingsMenu = document.getElementById("settingsMenu");
+    const settingsPlayers = document.getElementById("settingsPlayers");
+    const exitConfirm = document.getElementById("exitConfirm");
+    const notificationFeed = document.getElementById("notificationFeed");
+    const muteButton = document.getElementById("muteButton");
+    const votingMusic = document.getElementById("votingMusic");
+
+    // Shared with tv/index.html via localStorage, so muting on one TV
+    // screen stays muted after navigating to the other.
+    let isMuted = localStorage.getItem("tvMuted") === "true";
+
+    function applyMuteState() {
+        votingMusic.muted = isMuted;
+        muteButton.textContent = isMuted ? "\u{1F507}" : "\u{1F50A}";
+    }
+
+    function toggleMute() {
+        isMuted = !isMuted;
+        localStorage.setItem("tvMuted", isMuted ? "true" : "false");
+        applyMuteState();
+    }
+
+    applyMuteState();
+
+
+    // Where each room's marker sits on mansion-map.png, as a % of the
+    // map image's width/height. This used to be hardcoded here — it
+    // now comes from game/rooms.js on the server (each room's
+    // `mapZone`), via /api/game-data, so adding a room's map position
+    // only ever requires editing that one file.
+    //
+    // The fallback below is only used for the brief moment before the
+    // fetch below finishes.
+    let roomZones = {
+        lobby: { x: 50, y: 24 }
+    };
+
+    let charactersConfig = {};
+
+    fetch("/api/game-data")
+        .then(response => response.json())
+        .then(data => {
+            const rooms = data.rooms || {};
+            const zones = {};
+
+            Object.entries(rooms).forEach(([id, room]) => {
+                if (room.mapZone) {
+                    zones[id] = room.mapZone;
+                }
+            });
+
+            if (Object.keys(zones).length) {
+                roomZones = zones;
+            }
+
+            charactersConfig = data.characters || {};
+
+            if (currentLobby) {
+                drawPlayers(currentLobby.players);
+                renderVotingPopup(currentLobby);
+            }
+        })
+        .catch(() => {
+            // Keep the fallback zone above if the fetch fails.
+        });
+
+    if (!tvSessionId) {
+        window.location.href = "/tv/";
+    }
+
+    socket.on("connect", () => {
+        socket.emit("join", {
+            type: "tv",
+            tvSessionId
+        });
+
+        setTimeout(() => {
+            if (!lobbyRestored) {
+                window.location.href = "/tv/";
+            }
+        }, 1500);
+    });
+
+    socket.on("lobbyCreated", (lobby) => {
+        lobbyRestored = true;
+        currentLobby = lobby;
+        loading.style.display = "none";
+        mapScreen.style.display = "flex";
+        status.innerText = "Lobby " + lobby.code;
+        drawPlayers(lobby.players);
+        renderSettingsPlayers(lobby.players);
+        renderVotingPopup(lobby);
+        syncEndingScreen(lobby);
+    });
+
+    socket.on("lobbyUpdate", (lobby) => {
+        lobbyRestored = true;
+        currentLobby = lobby;
+        loading.style.display = "none";
+        mapScreen.style.display = "flex";
+        status.innerText = "Lobby " + lobby.code;
+        drawPlayers(lobby.players);
+        renderSettingsPlayers(lobby.players);
+        renderVotingPopup(lobby);
+        syncEndingScreen(lobby);
+    });
+
+    socket.on("lobbyClosed", () => {
+        localStorage.removeItem("tvSessionId");
+        window.location.href = "/tv/";
+    });
+
+    let accuseErrorTimer = null;
+
+    socket.on("lobbyError", (message) => {
+        const banner = document.getElementById("accuseErrorBanner");
+
+        clearTimeout(accuseErrorTimer);
+        banner.textContent = message;
+        banner.style.display = "block";
+
+        accuseErrorTimer = setTimeout(() => {
+            banner.style.display = "none";
+        }, 4000);
+    });
+
+    // Corner "chat log" of notable player actions (picking up an item,
+    // unlocking a door/safe, etc — see sendTvNotification() in
+    // server.js for exactly which actions trigger these). Always shows
+    // the last MAX_VISIBLE_NOTIFICATIONS messages — nothing auto-
+    // dismisses on a timer; older entries just fade lighter and get
+    // pushed out once a newer one arrives.
+    const MAX_VISIBLE_NOTIFICATIONS = 5;
+    const NOTIFICATION_OPACITY_STEPS = [1, 0.85, 0.68, 0.5, 0.32];
+
+    let notificationHistory = [];
+
+    socket.on("tvNotification", (data) => {
+        notificationHistory.push(data.message);
+
+        if (notificationHistory.length > MAX_VISIBLE_NOTIFICATIONS) {
+            notificationHistory = notificationHistory.slice(-MAX_VISIBLE_NOTIFICATIONS);
+        }
+
+        renderNotificationFeed();
+    });
+
+    function renderNotificationFeed() {
+        notificationFeed.innerHTML = "";
+
+        // Rendered oldest-first (top) to newest-last (bottom), so the
+        // feed reads top-to-bottom like a chat log, with the newest
+        // message anchored at the bottom, full opacity.
+        notificationHistory.forEach((message, index) => {
+            const ageFromNewest = notificationHistory.length - 1 - index;
+            const opacity = NOTIFICATION_OPACITY_STEPS[ageFromNewest] ?? NOTIFICATION_OPACITY_STEPS.at(-1);
+
+            const toast = document.createElement("div");
+            toast.className = "notificationToast";
+            toast.style.opacity = opacity;
+            toast.textContent = message;
+
+            if (ageFromNewest === 0) {
+                toast.classList.add("entering");
+            }
+
+            notificationFeed.appendChild(toast);
+        });
+    }
+
+    socket.on("disconnect", () => {
+        status.innerText = "Reconnecting...";
+    });
+
+    // "good"/"bad" results are reflected via lobby.status becoming
+    // "ended" on the next lobbyUpdate (see syncEndingScreen) — that
+    // persists correctly even if the TV reloads. A tie has no lasting
+    // state, so it gets a one-off banner here instead.
+    socket.on("accusationResult", (data) => {
+        // Hide the popup and stop the music right away rather than
+        // waiting for the next lobbyUpdate (accusationResult always
+        // arrives first) — same effect renderVotingPopup(lobby) would
+        // produce once lobby.accusation is null, just immediate.
+        document.getElementById("votingPopup").style.display = "none";
+
+        if (votingMusicPlaying) {
+            votingMusicPlaying = false;
+            votingMusic.pause();
+            votingMusic.currentTime = 0;
+        }
+
+        if (data.result !== "tie") return;
+
+        const banner = document.getElementById("voteResultBanner");
+        banner.textContent = "Group hasn't decided who the suspect is.";
+        banner.style.display = "block";
+
+        setTimeout(() => {
+            banner.style.display = "none";
+        }, 5000);
+    });
+
+    function drawPlayers(players) {
+        document.querySelectorAll(".playerMarker").forEach(marker => marker.remove());
+
+        const playersByRoom = {};
+
+        players.forEach(player => {
+            const room = player.currentRoom || "lobby";
+
+            if (!playersByRoom[room]) {
+                playersByRoom[room] = [];
+            }
+
+            playersByRoom[room].push(player);
+        });
+
+        Object.entries(playersByRoom).forEach(([room, roomPlayers]) => {
+            const zone = roomZones[room] || roomZones.lobby || { x: 50, y: 50 };
+
+            roomPlayers.forEach((player, index) => {
+                const marker = document.createElement("div");
+                marker.className = "playerMarker";
+                marker.textContent = player.name;
+
+                const offsetX = (index % 2) * 12 - 6;
+                const offsetY = Math.floor(index / 2) * 10;
+
+                marker.style.left = (zone.x + offsetX) + "%";
+                marker.style.top = (zone.y + offsetY) + "%";
+
+                mapWrap.appendChild(marker);
+            });
+        });
+    }
+
+    function toggleSettings() {
+        settingsMenu.classList.toggle("open");
+
+        if (!settingsMenu.classList.contains("open")) {
+            hideExitConfirmation();
+        }
+    }
+
+    // Starts an accusation vote for the whole table. The server
+    // rejects this (via lobbyError, shown in the status line) if
+    // there's no known suspect yet, or a vote is already underway.
+    function triggerGroupAccusation() {
+        if (!currentLobby) return;
+
+        socket.emit("startGroupAccusation", {
+            code: currentLobby.code,
+            tvSessionId
+        });
+    }
+
+    function cancelGroupVote() {
+        if (!currentLobby) return;
+
+        socket.emit("cancelAccusation", {
+            code: currentLobby.code,
+            tvSessionId
+        });
+    }
+
+    // Popup shown over the map for as long as lobby.accusation is
+    // active, tallying live votes per known suspect. Also starts/stops
+    // the voting music exactly once per transition (not on every
+    // lobbyUpdate, which fires far more often than the accusation
+    // actually starts/stops).
+    let votingMusicPlaying = false;
+
+    function renderVotingPopup(lobby) {
+        const popup = document.getElementById("votingPopup");
+        const accusation = lobby.accusation;
+
+        if (!accusation) {
+            popup.style.display = "none";
+
+            if (votingMusicPlaying) {
+                votingMusicPlaying = false;
+                votingMusic.pause();
+                votingMusic.currentTime = 0;
+            }
+
+            return;
+        }
+
+        if (!votingMusicPlaying) {
+            votingMusicPlaying = true;
+            votingMusic.play().catch(() => {
+                // Browsers may block audio until there's been a user
+                // interaction on the page — harmless if it fails here.
+            });
+        }
+
+        document.getElementById("votingPopupAccuser").textContent =
+            `${accusation.accuserName} is making an accusation`;
+
+        const interacted = lobby.interactedCharacters || {};
+        const votes = accusation.votes || {};
+
+        const tally = {};
+        Object.values(votes).forEach(characterId => {
+            tally[characterId] = (tally[characterId] || 0) + 1;
+        });
+
+        const connectedCount = lobby.players.filter(p => p.connected).length;
+        const votedCount = Object.keys(votes).length;
+
+        const rows = Object.keys(interacted)
+            .filter(characterId => interacted[characterId] && charactersConfig[characterId])
+            .map(characterId => {
+                const name = charactersConfig[characterId].name;
+                const count = tally[characterId] || 0;
+                return `<div class="votingPopupRow"><span>${escapeHtml(name)}</span><span>${count}</span></div>`;
+            })
+            .join("");
+
+        document.getElementById("votingPopupTally").innerHTML = rows;
+        document.getElementById("votingPopupProgress").textContent =
+            `${votedCount} / ${connectedCount} voted`;
+
+        popup.style.display = "flex";
+    }
+
+    // Shows/hides the full-screen ending overlay based on
+    // lobby.status — persisted state, so this is correct even for a
+    // TV that reloads after the game has already ended.
+    let endingTypewriterStarted = false;
+    let currentEndingResult = null;
+
+    function syncEndingScreen(lobby) {
+        const ending = document.getElementById("endingScreen");
+
+        if (lobby.status !== "ended") {
+            ending.style.display = "none";
+            endingTypewriterStarted = false;
+            return;
+        }
+
+        currentEndingResult = lobby.endingResult;
+
+        ending.style.backgroundImage = lobby.endingBackgroundImage
+            ? `linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.8)), url("${lobby.endingBackgroundImage}")`
+            : "none";
+
+        ending.style.display = "flex";
+
+        // Hide the voting popup defensively — checkAccusationComplete
+        // always clears lobby.accusation before status becomes "ended",
+        // so this is normally already hidden, but doesn't hurt.
+        document.getElementById("votingPopup").style.display = "none";
+
+        if (!endingTypewriterStarted) {
+            endingTypewriterStarted = true;
+            startEndingTypewriter(lobby.endingStoryText || "");
+        }
+    }
+
+    const ENDING_TYPING_SPEED = 32;
+    let endingStoryFullText = "";
+    let endingLetterIndex = 0;
+
+    function startEndingTypewriter(text) {
+        endingStoryFullText = text;
+        endingLetterIndex = 0;
+
+        document.getElementById("endingStoryText").textContent = "";
+
+        const verdict = document.getElementById("endingVerdict");
+        verdict.style.display = "none";
+        verdict.textContent = "";
+
+        document.getElementById("endingEndGameButton").style.display = "none";
+
+        typeNextEndingLetter();
+    }
+
+    function typeNextEndingLetter() {
+        if (endingLetterIndex >= endingStoryFullText.length) {
+            finishEndingTypewriter();
+            return;
+        }
+
+        document.getElementById("endingStoryText").textContent +=
+            endingStoryFullText[endingLetterIndex];
+
+        endingLetterIndex++;
+
+        setTimeout(typeNextEndingLetter, ENDING_TYPING_SPEED);
+    }
+
+    function finishEndingTypewriter() {
+        const verdict = document.getElementById("endingVerdict");
+
+        verdict.textContent = currentEndingResult === "good" ? "GOOD ENDING" : "BAD ENDING";
+        verdict.style.color = currentEndingResult === "good" ? "#3ddc73" : "#ff4d4d";
+        verdict.style.display = "block";
+
+        document.getElementById("endingEndGameButton").style.display = "inline-block";
+    }
+
+    // Ends the session for everyone — every phone falls back to the
+    // join screen, and this TV returns to its own first page (the
+    // lobbyClosed handler above already does that redirect).
+    function endGameForEveryoneTv() {
+        if (!currentLobby) return;
+
+        socket.emit("endGameSession", {
+            code: currentLobby.code,
+            tvSessionId
+        });
+    }
+
+    function kickPlayer(token) {
+        if (!currentLobby) return;
+
+        socket.emit("removePlayer", {
+            code: currentLobby.code,
+            playerToken: token
+        });
+    }
+
+    function showExitConfirmation() {
+        exitConfirm.classList.add("open");
+    }
+
+    function hideExitConfirmation() {
+        exitConfirm.classList.remove("open");
+    }
+
+    function confirmExitGame() {
+        if (!currentLobby) return;
+
+        socket.emit("endGame", {
+            code: currentLobby.code,
+            tvSessionId
+        });
+    }
+
+    function renderSettingsPlayers(players) {
+        if (!players.length) {
+            settingsPlayers.innerHTML = "No players in the game.";
+            return;
+        }
+
+        settingsPlayers.innerHTML = players.map(player => `
+            <div class="settingsPlayer">
+                <span class="settingsPlayerName">
+                    ${escapeHtml(player.name)}${player.connected ? "" : " (offline)"}
+                </span>
+                <button class="kickButton" onclick="kickPlayer('${player.token}')">Kick</button>
+            </div>
+        `).join("");
+    }
+
+    function escapeHtml(text) {
+        const element = document.createElement("div");
+        element.textContent = text;
+        return element.innerHTML;
+    }
+
+    document.addEventListener("click", (event) => {
+        const settingsWrap = document.getElementById("settingsWrap");
+
+        if (!settingsWrap.contains(event.target)) {
+            settingsMenu.classList.remove("open");
+            hideExitConfirmation();
+        }
+    });
+</script>
+
+</body>
+</html>
