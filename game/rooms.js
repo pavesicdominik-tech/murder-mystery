@@ -64,7 +64,11 @@ const ROOMS = {
         image: "/images/rooms/lobby.jpg",
         mapZone: { x: 50, y: 24 },
         doors: [
-            { target: "library", label: "Library", left: "9%", top: "42%", width: "17%", height: "26%" }
+            { target: "dining", label: "Dining Room", left: "9%", top: "42%", width: "17%", height: "26%" },
+            { target: "powder-room", label: "Powder Room", left: "76%", top: "42%", width: "17%", height: "26%" },
+            // Placed top-middle, side by side, per request.
+            { target: "basement-stairway", label: "Stairway to the Basement", left: "35%", top: "6%", width: "14%", height: "22%" },
+            { target: "hallway", label: "Hallway", left: "51%", top: "6%", width: "14%", height: "22%" }
         ]
     },
 
@@ -74,7 +78,11 @@ const ROOMS = {
         image: "/images/rooms/library.jpg",
         mapZone: { x: 21, y: 25 },
         doors: [
-            { target: "lobby", label: "Lobby", left: "76%", top: "33%", width: "16%", height: "34%" },
+            // Was "Lobby"; now leads to the Bedroom instead — the
+            // library/lobby connection no longer exists in either
+            // direction (see lobby.doors above, which no longer
+            // targets library either).
+            { target: "bedroom", label: "Bedroom", left: "76%", top: "33%", width: "16%", height: "34%" },
 
             // Only shown once the piano puzzle is solved (see `piano`
             // below). requiresFlag on a DOOR (unlike on a room) only
@@ -83,7 +91,9 @@ const ROOMS = {
             // destination room's own requiresFlag/requiresItem (attic's
             // flashlight requirement) still applies regardless of which
             // door was used to get there.
-            { target: "attic", label: "Hidden Passage", left: "42%", top: "22%", width: "18%", height: "48%", requiresFlag: "libraryPianoSolved" }
+            { target: "attic", label: "Hidden Passage", left: "42%", top: "22%", width: "18%", height: "48%", requiresFlag: "libraryPianoSolved" },
+
+            { target: "hallway", label: "Hallway", left: "10%", top: "60%", width: "16%", height: "25%" }
         ],
         itemHotspots: [
             { placementId: "library-basement-key", label: "Take key", left: "64%", top: "58%" }
@@ -138,7 +148,8 @@ const ROOMS = {
         image: "/images/rooms/dining.jpg",
         mapZone: { x: 21, y: 72 },
         doors: [
-            { target: "kitchen", label: "Kitchen", left: "76%", top: "36%", width: "17%", height: "30%" }
+            { target: "kitchen", label: "Kitchen", left: "76%", top: "36%", width: "17%", height: "30%" },
+            { target: "lobby", label: "Lobby", left: "5%", top: "38%", width: "17%", height: "30%" }
         ]
     },
 
@@ -148,11 +159,9 @@ const ROOMS = {
         image: "/images/rooms/bedroom.jpg",
         mapZone: { x: 79, y: 72 },
         doors: [
-            // Was "Downstairs" -> basement-stairway; now leads to the
-            // Library instead. The attic is only reachable through the
-            // library's hidden passage now (see library.doors above).
-            { target: "library", label: "Library", left: "8%", top: "35%", width: "18%", height: "32%" },
-            { target: "hallway", label: "Hallway", left: "45%", top: "10%", width: "16%", height: "24%" }
+            // Bedroom's only connection now — the hallway door has
+            // been removed (Bedroom is reachable only via Library).
+            { target: "library", label: "Library", left: "8%", top: "35%", width: "18%", height: "32%" }
         ],
         characterHotspots: [
             { characterId: "maid", left: "25%", top: "22%", width: "13%", height: "55%" }
@@ -166,9 +175,9 @@ const ROOMS = {
         // Placeholder position — move this to match your mansion-map.png.
         mapZone: { x: 63, y: 55 },
         doors: [
-            { target: "bedroom", label: "Bedroom", left: "8%", top: "35%", width: "16%", height: "32%" },
             { target: "son-bedroom", label: "Son's Bedroom", left: "42%", top: "20%", width: "16%", height: "40%" },
-            { target: "powder-room", label: "Powder Room", left: "76%", top: "35%", width: "16%", height: "32%" }
+            { target: "library", label: "Library", left: "8%", top: "35%", width: "16%", height: "32%" },
+            { target: "lobby", label: "Lobby", left: "76%", top: "35%", width: "16%", height: "32%" }
         ],
         characterHotspots: [
             { characterId: "son", left: "58%", top: "20%", width: "13%", height: "55%" }
@@ -212,7 +221,10 @@ const ROOMS = {
         // Placeholder position — move this to match your mansion-map.png.
         mapZone: { x: 84, y: 40 },
         doors: [
-            { target: "hallway", label: "Hallway", left: "8%", top: "35%", width: "16%", height: "32%" }
+            // Was "Hallway"; now leads directly to the Lobby instead
+            // (matches lobby.doors above, which now has a direct door
+            // here too).
+            { target: "lobby", label: "Lobby", left: "8%", top: "35%", width: "16%", height: "32%" }
         ],
         characterHotspots: [
             { characterId: "wife", left: "45%", top: "22%", width: "13%", height: "55%" }
@@ -226,7 +238,9 @@ const ROOMS = {
         // Placeholder position — move this to match your mansion-map.png.
         mapZone: { x: 50, y: 72 },
         doors: [
-            { target: "bedroom", label: "Back Upstairs", left: "8%", top: "35%", width: "18%", height: "32%" }
+            // Was "Back Upstairs" -> bedroom; now leads directly to the
+            // Lobby instead (matches lobby.doors above).
+            { target: "lobby", label: "Lobby", left: "8%", top: "35%", width: "18%", height: "32%" }
         ]
     },
 

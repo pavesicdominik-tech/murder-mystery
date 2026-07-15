@@ -203,24 +203,58 @@ const CHARACTERS = {
         roomSprite: "/images/characters/mysterious-person-room.png",
         closeupImage: "/images/characters/mysterious-person-closeup.png",
 
+        // Shown lobby-wide (everyone, not just the giver) once the
+        // skull has been given to him — his appearance itself changes.
+        // Safe to send in the general character payload (see
+        // getClientCharacters below), since it's just alternate art,
+        // not spoiler content — unlike the fields further down.
+        roomSpriteAfterSkull: "/images/characters/mysterious-person-room-revealed.png",
+        closeupImageAfterSkull: "/images/characters/mysterious-person-closeup-revealed.png",
+
         // Never appears on the accusation suspect list, no matter how
         // many times players talk to him.
         excludeFromSuspects: true,
 
-        // Unlike the other characters, he doesn't use the generic
-        // intro-line + questions dialogue at all — his interaction is
-        // fully bespoke (see interactWithMysteriousPerson in server.js
-        // and the matching client code in phone/index.html), driven by
-        // whether the player has given him the Skull item yet. These
-        // two lines are intentionally NOT included in
-        // getClientCharacters()'s whitelist below, so a player can't
-        // peek at the hint before actually finding the skull.
-        dismissiveLine: "\"I'm not in the mood to talk.\"",
-        hintLine: "\"...You brought me a gift. Very well — ask the cook where they really were the night the master died. The kitchen was dark that night. No candles burned.\"",
+        // Shown to ANY player, any number of times, until someone has
+        // given him the skull.
+        introLine: "\"The manor lord lets me walk his backyard at night. Oh, the things I see...\"",
 
-        // Unused (his dialogue is fully bespoke) — kept only so this
-        // entry has the same shape as every other character.
-        introLine: "",
+        // Shown to any OTHER player once the skull has already been
+        // given to someone (i.e. every player except the giver).
+        dismissiveLine: "\"I'm not in the mood to talk.\"",
+
+        // ---- Everything below is intentionally NEVER included in
+        // getClientCharacters()'s whitelist — only delivered directly
+        // to the giver via the mysteriousPersonDialogue event in
+        // server.js, once they've actually given him the skull. This
+        // is what stops a player from reading the real clue in advance
+        // via devtools/network tab. ----
+
+        // The giver's new intro line, replacing the teaser above —
+        // followed immediately by the question list below.
+        hintIntroLine: "\"...You brought me a gift. Very well, ask what you wish.\"",
+
+        revealedQuestions: [
+            {
+                id: "victim-relation",
+                question: "What do you know about the murder?",
+                answer: "\"Ask the cook where they really were the night the master died. The kitchen was dark that night. No candles burned.\""
+            },
+            {
+                id: "who-are-you",
+                question: "Who are you, really?",
+                answer: "\"Just a wanderer who's seen more of this house's secrets than its own family has.\""
+            },
+            {
+                id: "why-here",
+                question: "Why do you linger in this backyard?",
+                answer: "\"Old habits. I watched this house long before the killing started, and I'll watch it long after.\""
+            }
+        ],
+
+        // Unused (his public dialogue is fully bespoke, driven by the
+        // fields above) — kept only so this entry has the same shape
+        // as every other character.
         questions: []
     }
 };
@@ -229,17 +263,20 @@ function getClientCharacters() {
     const clientCharacters = {};
 
     for (const [id, character] of Object.entries(CHARACTERS)) {
-        // isMurderer, excludeFromSuspects, dismissiveLine, hintLine, and
-        // every ending field are all deliberately left out here — the
-        // browser only ever learns them through the actual gameplay
-        // events that reveal them (interactWithMysteriousPerson's
-        // response, or the accusationResult once the game has ended),
-        // not the general room/character data available throughout.
+        // isMurderer, excludeFromSuspects, dismissiveLine, hintIntroLine,
+        // revealedQuestions, and every ending field are all
+        // deliberately left out here — the browser only ever learns
+        // them through the actual gameplay events that reveal them
+        // (interactWithMysteriousPerson's response, or the
+        // accusationResult once the game has ended), not the general
+        // room/character data available throughout the game.
         clientCharacters[id] = {
             id: character.id,
             name: character.name,
             roomSprite: character.roomSprite,
             closeupImage: character.closeupImage,
+            roomSpriteAfterSkull: character.roomSpriteAfterSkull || null,
+            closeupImageAfterSkull: character.closeupImageAfterSkull || null,
             introLine: character.introLine,
             questions: character.questions
         };

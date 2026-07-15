@@ -25,21 +25,28 @@
         }
 
         #mapWrap {
-            position: relative;
-            width: min(95vw, 1100px);
-            /* Must match mansion-map.png's real aspect ratio (1659x948
-               = 1.75). A mismatch here causes object-fit: contain to
-               letterbox the image, which throws off every player
-               marker's % position — same root cause as the phone's
-               hotspot drift bug. If you replace this image, update
-               this ratio to match. */
-            aspect-ratio: 1659 / 948;
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
         }
 
         #mapImage {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            /*
+                object-fit: fill stretches the image to exactly match
+                mapWrap's box, ignoring the photo's native aspect ratio.
+                This is intentional (stretched map, edge to edge) —
+                unlike the phone's room hotspots, player markers here
+                are simple named labels rather than pixel-precise photo
+                hotspots, so a little distortion doesn't cause the same
+                "drift" problem. Every marker is positioned as a % of
+                THIS SAME mapWrap box (see drawPlayers() below), so
+                they automatically track the stretch — no extra math
+                needed.
+            */
+            object-fit: fill;
             display: block;
         }
 
@@ -223,8 +230,8 @@
 
         #suspectListWrap {
             position: absolute;
-            bottom: 16px;
-            right: 16px;
+            top: 16px;
+            right: 124px;
             z-index: 20;
             font-family: Arial, sans-serif;
         }
@@ -240,14 +247,14 @@
             cursor: pointer;
         }
 
-        /* Shown directly above the Accuse button (e.g. "No suspects
+        /* Shown directly below the Accuse button (e.g. "No suspects
            yet.") — bigger and more visible than the old status-line
            text, which used to overlap the button and go unnoticed. */
         #accuseErrorBanner {
             display: none;
             position: absolute;
-            bottom: 68px;
-            right: 16px;
+            top: 64px;
+            right: 124px;
             z-index: 21;
             max-width: min(320px, 60vw);
             padding: 12px 16px;
@@ -375,6 +382,22 @@
             background-size: cover;
             background-position: center;
             text-align: center;
+        }
+
+        #endingMuteButton {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            z-index: 1501;
+            width: 42px;
+            height: 42px;
+            padding: 0;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            background: rgba(0, 0, 0, 0.55);
+            color: white;
+            font-size: 18px;
+            line-height: 1;
         }
 
         #endingBox {
@@ -515,6 +538,8 @@
 </div>
 
 <div id="endingScreen">
+    <button id="endingMuteButton" type="button" onclick="toggleMute()" aria-label="Toggle sound"></button>
+
     <div id="endingBox">
         <p id="endingStoryText"></p><span class="cursor"></span>
         <div id="endingVerdict"></div>
@@ -528,6 +553,7 @@
 </div>
 
 <audio id="votingMusic" src="/sounds/voting.mp3" loop></audio>
+<audio id="endingMusicElement" src="/sounds/ending.mp3" loop></audio>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -547,6 +573,8 @@
     const notificationFeed = document.getElementById("notificationFeed");
     const muteButton = document.getElementById("muteButton");
     const votingMusic = document.getElementById("votingMusic");
+    const endingMusicElement = document.getElementById("endingMusicElement");
+    const endingMuteButton = document.getElementById("endingMuteButton");
 
     // Shared with tv/index.html via localStorage, so muting on one TV
     // screen stays muted after navigating to the other.
@@ -554,7 +582,11 @@
 
     function applyMuteState() {
         votingMusic.muted = isMuted;
-        muteButton.textContent = isMuted ? "\u{1F507}" : "\u{1F50A}";
+        endingMusicElement.muted = isMuted;
+
+        const icon = isMuted ? "\u{1F507}" : "\u{1F50A}";
+        muteButton.textContent = icon;
+        endingMuteButton.textContent = icon;
     }
 
     function toggleMute() {
@@ -871,6 +903,7 @@
     // lobby.status — persisted state, so this is correct even for a
     // TV that reloads after the game has already ended.
     let endingTypewriterStarted = false;
+    let endingMusicStarted = false;
     let currentEndingResult = null;
 
     function syncEndingScreen(lobby) {
@@ -879,6 +912,13 @@
         if (lobby.status !== "ended") {
             ending.style.display = "none";
             endingTypewriterStarted = false;
+
+            if (endingMusicStarted) {
+                endingMusicStarted = false;
+                endingMusicElement.pause();
+                endingMusicElement.currentTime = 0;
+            }
+
             return;
         }
 
@@ -898,6 +938,17 @@
         if (!endingTypewriterStarted) {
             endingTypewriterStarted = true;
             startEndingTypewriter(lobby.endingStoryText || "");
+        }
+
+        // Plays for both good and bad endings — only started once per
+        // ending, same pattern as the typewriter.
+        if (!endingMusicStarted) {
+            endingMusicStarted = true;
+
+            endingMusicElement.play().catch(() => {
+                // Browsers may block audio until there's been a user
+                // interaction on the page — harmless if it fails here.
+            });
         }
     }
 

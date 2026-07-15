@@ -624,11 +624,13 @@ io.on("connection", (socket) => {
         sendPrivateInventoryToPlayer(receiver);
 
         socket.emit("gameMessage", `You gave ${receiver.name} the ${item.name}.`);
+        socket.emit("itemRemoved", { sound: DEFAULT_PICKUP_SOUND });
 
         if (receiver.socketId) {
             io.to(receiver.socketId).emit("itemReceived", {
                 fromName: giver.name,
-                itemName: item.name
+                itemName: item.name,
+                sound: DEFAULT_PICKUP_SOUND
             });
         }
     });
@@ -664,14 +666,19 @@ io.on("connection", (socket) => {
     // driven entirely by whether THIS player has ever given him the
     // Skull item — not the generic intro-line + questions dialogue.
     //
-    //   - Already gave it (lobby.skullGivenBy === this player): show
-    //     the hint again, no further changes.
-    //   - Has the skull right now, hasn't given it yet: take it (it's
-    //     consumed — gone from their inventory for good), record them
-    //     as the giver, reveal the hint.
-    //   - Anyone else (including a player who never finds the skull,
-    //     or any OTHER player once someone else already gave it away):
-    //     his dismissive line, every time.
+    //   - Already the giver (lobby.skullGivenBy === this player): his
+    //     unlocked intro line again, PLUS the real question list — only
+    //     this player ever sees revealedQuestions.
+    //   - Someone ELSE already gave it: his dismissive line, no
+    //     questions, every time — even if THIS player later finds
+    //     their own skull, there's only ever one to give (it's
+    //     consumed on first use).
+    //   - Nobody has given it yet, and this player doesn't have it:
+    //     his public teaser intro line, no questions.
+    //   - Nobody has given it yet, and this player DOES have it: it's
+    //     taken (consumed — gone from their inventory for good), they
+    //     become the recorded giver, and they immediately get the
+    //     unlocked intro + questions.
     socket.on("interactWithMysteriousPerson", ({ code, playerToken }) => {
         const lobby = lobbies[code];
         if (!lobby) return;
@@ -686,8 +693,18 @@ io.on("connection", (socket) => {
 
         if (lobby.skullGivenBy === playerToken) {
             socket.emit("mysteriousPersonDialogue", {
-                line: character.hintLine,
-                gaveSkull: false
+                line: character.hintIntroLine,
+                gaveSkull: false,
+                questions: character.revealedQuestions || []
+            });
+            return;
+        }
+
+        if (lobby.skullGivenBy) {
+            socket.emit("mysteriousPersonDialogue", {
+                line: character.dismissiveLine,
+                gaveSkull: false,
+                questions: null
             });
             return;
         }
@@ -697,8 +714,9 @@ io.on("connection", (socket) => {
 
         if (skullIndex === -1) {
             socket.emit("mysteriousPersonDialogue", {
-                line: character.dismissiveLine,
-                gaveSkull: false
+                line: character.introLine,
+                gaveSkull: false,
+                questions: null
             });
             return;
         }
@@ -707,10 +725,13 @@ io.on("connection", (socket) => {
         lobby.skullGivenBy = playerToken;
 
         socket.emit("mysteriousPersonDialogue", {
-            line: character.hintLine,
+            line: character.hintIntroLine,
             gaveSkull: true,
-            skullIcon: skullItem.icon
+            skullIcon: skullItem.icon,
+            questions: character.revealedQuestions || []
         });
+
+        socket.emit("itemRemoved", { sound: DEFAULT_PICKUP_SOUND });
 
         sendPrivatePlayerUpdate(socket, lobby, playerToken);
         sendLobbyUpdate(lobby);
@@ -820,6 +841,7 @@ io.on("connection", (socket) => {
         lobby.basementUnlocked = true;
 
         socket.emit("basementUnlocked");
+        socket.emit("itemRemoved", { sound: DEFAULT_PICKUP_SOUND });
         sendTvNotification(lobby, `${player.name} has unlocked the basement door.`);
         sendPrivatePlayerUpdate(socket, lobby, playerToken);
         sendLobbyUpdate(lobby);
@@ -1003,7 +1025,7 @@ io.on("connection", (socket) => {
         socket.emit("safeCodeCorrect");
         socket.emit("safeEntered");
 
-        io.to(code).emit(
+        socket.emit(
             "gameMessage",
             "A heavy mechanism unlocks somewhere in the basement."
         );
@@ -1224,7 +1246,20 @@ io.on("connection", (socket) => {
         if (lobby && token) {
             const player = lobby.players.find(p => p.token === token);
 
-            if (player) {
+            // Critical guard: only act if THIS socket is still the one
+            // on file for the player. If they already reconnected with
+            // a new socket (which updates player.socketId in joinLobby)
+            // before this disconnect event was processed, `socket.id`
+            // here refers to the OLD, now-dead connection — acting on
+            // it would incorrectly wipe out the valid, newer socketId
+            // and leave the player unable to do anything (every action
+            // checks player.socketId === socket.id). This race is rare
+            // on localhost (disconnect/reconnect happen almost
+            // instantly) but much more likely on a real host, where
+            // network latency/ping-timeout detection can delay the old
+            // socket's disconnect event until well after the new one
+            // has already reconnected.
+            if (player && player.socketId === socket.id) {
                 // Mark them offline immediately (so the TV map / other
                 // phones see it right away), but do NOT touch their
                 // inventory yet — a refresh or a dropped signal looks

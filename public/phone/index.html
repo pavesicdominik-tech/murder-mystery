@@ -70,6 +70,7 @@
 
         #introScreen {
             display: none;
+            position: relative;
             min-height: 100vh;
             padding: 28px;
             background-image:
@@ -81,6 +82,24 @@
             font-family: "Courier New", Courier, monospace;
             align-items: center;
             justify-content: center;
+        }
+
+        #introMuteButton {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            z-index: 5;
+            width: 42px;
+            height: 42px;
+            min-height: 42px;
+            padding: 0;
+            margin: 0;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            background: rgba(0, 0, 0, 0.55);
+            color: white;
+            font-size: 18px;
+            line-height: 1;
         }
 
         #phoneIntroBox {
@@ -1126,6 +1145,8 @@
     </div>
 
     <div id="introScreen">
+        <button id="introMuteButton" type="button" onclick="togglePhoneMute()" aria-label="Toggle sound"></button>
+
         <div id="phoneIntroBox">
             <p id="phoneStoryText"></p><span class="cursor"></span>
             <button id="phoneEnterButton" onclick="enterMansion()">
@@ -1416,6 +1437,19 @@
          5th) — see clickCatHotspot()/catHotspotSound below. -->
     <audio id="catSoundElement" preload="auto"></audio>
 
+    <!-- Loops for as long as the intro (story) screen is showing. -->
+    <audio id="introMusicElement" preload="auto" loop>
+        <source src="/sounds/intro-music.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- Played whenever an item leaves this player's inventory for a
+         reason other than picking a fresh one up from a room (given to
+         another player, or consumed by a puzzle) — see the itemRemoved
+         and itemReceived handlers below. -->
+    <audio id="itemRemovedSoundElement" preload="auto">
+        <source src="/sounds/pickupitemsound.mp3" type="audio/mpeg">
+    </audio>
+
     <script src="/socket.io/socket.io.js"></script>
 
     <script>
@@ -1545,6 +1579,44 @@
         const crowSoundElement = document.getElementById("crowSoundElement");
         const catSoundElement = document.getElementById("catSoundElement");
         const pianoHotspot = document.getElementById("pianoHotspot");
+        const introMusicElement = document.getElementById("introMusicElement");
+        const itemRemovedSoundElement = document.getElementById("itemRemovedSoundElement");
+        const introMuteButton = document.getElementById("introMuteButton");
+
+        // ------------------------------------------------------------
+        // A single mute preference for this device, applied to every
+        // sound/music element on the phone. Persisted so it carries
+        // across refreshes and reconnects. The toggle button currently
+        // only lives on the intro screen, but the mute STATE itself is
+        // global — every audio element below respects it.
+        // ------------------------------------------------------------
+        let isPhoneMuted = localStorage.getItem("phoneMuted") === "true";
+
+        function applyPhoneMuteState() {
+            [
+                keypadSound,
+                pickupSoundElement,
+                passageOpenSoundElement,
+                crowSoundElement,
+                catSoundElement,
+                introMusicElement,
+                itemRemovedSoundElement
+            ].forEach(element => {
+                if (element) element.muted = isPhoneMuted;
+            });
+
+            if (introMuteButton) {
+                introMuteButton.textContent = isPhoneMuted ? "\u{1F507}" : "\u{1F50A}";
+            }
+        }
+
+        function togglePhoneMute() {
+            isPhoneMuted = !isPhoneMuted;
+            localStorage.setItem("phoneMuted", isPhoneMuted ? "true" : "false");
+            applyPhoneMuteState();
+        }
+
+        applyPhoneMuteState();
 
         const story = [
             "October 31st, 1998.",
@@ -1706,6 +1778,11 @@
 
         socket.on("itemReceived", (data) => {
             showGameMessage(`${data.fromName} gave you ${data.itemName}`);
+            playItemRemovedSound();
+        });
+
+        socket.on("itemRemoved", () => {
+            playItemRemovedSound();
         });
 
         socket.on("accusationResult", (data) => {
@@ -2193,6 +2270,24 @@
             document.getElementById("gameScreen").style.display = "none";
 
             startPhoneIntro();
+            playIntroMusic();
+        }
+
+        function playIntroMusic() {
+            if (!introMusicElement) return;
+
+            introMusicElement.currentTime = 0;
+
+            introMusicElement.play().catch(() => {
+                // Sound is optional. Browsers may block audio until interaction.
+            });
+        }
+
+        function stopIntroMusic() {
+            if (!introMusicElement) return;
+
+            introMusicElement.pause();
+            introMusicElement.currentTime = 0;
         }
 
         function showGameScreen() {
@@ -2200,6 +2295,8 @@
             document.getElementById("waitingScreen").style.display = "none";
             document.getElementById("introScreen").style.display = "none";
             document.getElementById("gameScreen").style.display = "block";
+
+            stopIntroMusic();
 
             if (joinedLobby) {
                 updatePhoneLobby(joinedLobby);
@@ -2384,7 +2481,18 @@
 
                 const img = document.createElement("img");
                 img.className = "characterHotspot";
-                img.src = character.roomSprite;
+
+                // Some characters (currently only the Mysterious
+                // Person) have an alternate appearance that kicks in
+                // lobby-wide once a specific flag is set — here, once
+                // anyone has given him the skull. Generic check: any
+                // character with roomSpriteAfterSkull set uses it once
+                // joinedLobby.skullGivenBy is truthy.
+                const showAfterSkull =
+                    Boolean(character.roomSpriteAfterSkull) &&
+                    Boolean(joinedLobby?.skullGivenBy);
+
+                img.src = showAfterSkull ? character.roomSpriteAfterSkull : character.roomSprite;
                 img.alt = character.name;
                 img.style.left = spot.left;
                 img.style.top = spot.top;
@@ -2472,7 +2580,7 @@
             document.getElementById("characterPopupName").textContent = character.name;
             document.getElementById("characterDialogueText").textContent = character.introLine;
 
-            renderCharacterQuestions(character);
+            renderQuestionButtons(character.questions);
 
             document.getElementById("characterPopupOverlay").style.display = "flex";
 
@@ -2512,13 +2620,23 @@
 
             openCharacterId = "mysterious-person";
 
-            document.getElementById("characterPopupImage").src = character.closeupImage;
+            // Same generic "after skull" swap as his room sprite (see
+            // renderCharacterHotspots) — everyone sees his new
+            // appearance in the popup too, once anyone's given it.
+            const showAfterSkull =
+                Boolean(character.closeupImageAfterSkull) &&
+                Boolean(joinedLobby?.skullGivenBy);
+
+            document.getElementById("characterPopupImage").src =
+                showAfterSkull ? character.closeupImageAfterSkull : character.closeupImage;
             document.getElementById("characterPopupImage").alt = character.name;
             document.getElementById("characterPopupName").textContent = character.name;
             document.getElementById("characterDialogueText").textContent = data.line;
 
-            // He has no questions to ask — the list is just left empty.
-            document.getElementById("characterQuestionList").innerHTML = "";
+            // Only the giver's dialogue ever includes real questions
+            // (data.questions) — everyone else gets null/omitted here,
+            // same as any other player who hasn't unlocked a character.
+            renderQuestionButtons(data.questions);
 
             document.getElementById("characterPopupOverlay").style.display = "flex";
 
@@ -2563,11 +2681,17 @@
             });
         }
 
-        function renderCharacterQuestions(character) {
+        // Takes a plain questions array (not a whole character object)
+        // so it works both for the generic charactersConfig[id].questions
+        // (Butler/Cook/Maid/Wife/Son) AND for Mysterious Person's
+        // revealedQuestions, which only ever arrives dynamically via
+        // the mysteriousPersonDialogue event (never pre-loaded, since
+        // it's spoiler content — see game/characters.js).
+        function renderQuestionButtons(questions) {
             const list = document.getElementById("characterQuestionList");
             list.innerHTML = "";
 
-            (character.questions || []).forEach(questionEntry => {
+            (questions || []).forEach(questionEntry => {
                 const button = document.createElement("button");
                 button.type = "button";
                 button.className = "characterQuestionButton";
@@ -3156,6 +3280,20 @@
             });
         }
 
+        // Always the same fixed sound (pickupitemsound.mp3), regardless
+        // of which item — used whenever an item leaves this player's
+        // inventory for a reason other than a fresh pickup (given away,
+        // or consumed by a puzzle), or arrives from another player.
+        function playItemRemovedSound() {
+            if (!itemRemovedSoundElement) return;
+
+            itemRemovedSoundElement.currentTime = 0;
+
+            itemRemovedSoundElement.play().catch(() => {
+                // Sound is optional. Browsers may block audio until interaction.
+            });
+        }
+
         function pressKeypadNumber(number) {
             if (keypadLocked) return;
             if (keypadCode.length >= 8) return;
@@ -3223,6 +3361,7 @@
             document.getElementById("votingOverlay").style.display = "none";
             document.getElementById("endingScreen").style.display = "none";
             endingTypewriterStarted = false;
+            stopIntroMusic();
             renderInventory();
             forgetSession();
 
@@ -3249,6 +3388,7 @@
             document.getElementById("votingOverlay").style.display = "none";
             document.getElementById("endingScreen").style.display = "none";
             endingTypewriterStarted = false;
+            stopIntroMusic();
             renderInventory();
             forgetSession();
 
