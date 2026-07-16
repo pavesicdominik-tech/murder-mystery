@@ -2068,44 +2068,78 @@
             roomScene.classList.remove("dragging");
         });
 
-        function showRoomImage(room) {
-            currentRoom = room;
+        // Tracks which room was last fully rendered, so showRoomImage()
+        // can tell "did MY room actually change" apart from "a
+        // lobbyUpdate arrived for some unrelated reason" (another
+        // player moving, picking something up, etc). Without this,
+        // every player's screen would reset (scroll position snapping
+        // back to center, image reloading, flashlight re-centering)
+        // every time ANYONE in the lobby did anything, anywhere.
+        let lastRenderedRoom = null;
 
-            const config = roomsConfig[room];
-
-            roomImage.style.display = "block";
-            imageMessage.style.display = "none";
+        function getRoomImageSrc(config) {
+            if (!config) return "";
 
             // Some rooms swap to a different image once a specific
             // lobby flag is set (e.g. the library once its piano
             // puzzle is solved) — see altImage/altImageFlag in
             // game/rooms.js.
-            let imageSrc = config ? config.image : "";
-
             if (
-                config &&
                 config.altImage &&
                 config.altImageFlag &&
                 joinedLobby &&
                 joinedLobby[config.altImageFlag]
             ) {
-                imageSrc = config.altImage;
+                return config.altImage;
             }
 
-            roomImage.src = imageSrc;
-            roomImage.alt = (config && config.label) || "Room";
+            return config.image;
+        }
 
-            if (config && config.dark) {
-                flashlightOverlay.style.display = "block";
-                flashlightOverlay.style.setProperty("--flashlight-x", "50%");
-                flashlightOverlay.style.setProperty("--flashlight-y", "50%");
+        function showRoomImage(room) {
+            const roomChanged = room !== lastRenderedRoom;
+            currentRoom = room;
+
+            const config = roomsConfig[room];
+
+            if (roomChanged) {
+                roomImage.style.display = "block";
+                imageMessage.style.display = "none";
+                roomImage.src = getRoomImageSrc(config);
+                roomImage.alt = (config && config.label) || "Room";
+
+                if (config && config.dark) {
+                    flashlightOverlay.style.display = "block";
+                    flashlightOverlay.style.setProperty("--flashlight-x", "50%");
+                    flashlightOverlay.style.setProperty("--flashlight-y", "50%");
+                } else {
+                    flashlightOverlay.style.display = "none";
+                }
+
+                sizeRoomCanvas();
+                centerRoomScroll();
+
+                lastRenderedRoom = room;
+                playCrowSoundIfFirstVisit(room);
             } else {
-                flashlightOverlay.style.display = "none";
+                // Same room as last render — but a flag that swaps the
+                // image (e.g. the piano puzzle) could have just changed
+                // while we're standing here. Swap the src if needed,
+                // WITHOUT touching scroll position or re-centering.
+                const correctSrc = getRoomImageSrc(config);
+
+                if (correctSrc && !roomImage.src.endsWith(correctSrc)) {
+                    roomImage.src = correctSrc;
+                }
             }
 
-            sizeRoomCanvas();
-            centerRoomScroll();
-
+            // These always refresh regardless of whether the room
+            // itself changed, since they reflect shared state that can
+            // change while you're standing still (another player
+            // taking an item, solving a puzzle, etc). None of them
+            // touch scroll position, image src, or canvas sizing, so
+            // they don't cause the "screen reset" feeling — they just
+            // quietly keep hotspots in sync.
             renderDoorHotspots(room);
             renderItemHotspots(room);
             renderCharacterHotspots(room);
@@ -2114,7 +2148,6 @@
             updateBasementPuzzle();
             updateAccuseHotspotVisibility();
             updatePianoHotspotVisibility();
-            playCrowSoundIfFirstVisit(room);
         }
 
         roomImage.addEventListener("error", () => {
@@ -3362,6 +3395,7 @@
             document.getElementById("endingScreen").style.display = "none";
             endingTypewriterStarted = false;
             stopIntroMusic();
+            lastRenderedRoom = null;
             renderInventory();
             forgetSession();
 
@@ -3389,6 +3423,7 @@
             document.getElementById("endingScreen").style.display = "none";
             endingTypewriterStarted = false;
             stopIntroMusic();
+            lastRenderedRoom = null;
             renderInventory();
             forgetSession();
 
