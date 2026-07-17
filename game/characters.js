@@ -72,6 +72,18 @@ const CHARACTERS = {
             }
         ],
 
+        // Unlocked lobby-wide (for every player, not just whoever found
+        // it) the moment the safe is discovered — i.e. once the
+        // basement picture has been moved aside, reusing
+        // lobby.basementPictureMoved rather than a new flag. Kept out
+        // of getClientCharacters() below like the Cook's knifeQuestion,
+        // so the answer is only ever delivered through the dedicated
+        // askButlerAboutSafe round trip.
+        safeQuestion: {
+            question: "What do you know about the safe?",
+            answer: "\"The safe? That would be the master's. I imagine he kept his important documents in there. I don't know the combination myself, but... he always did like to set his numbers to something easy to remember.\""
+        },
+
         badEndingImage: "/images/endings/butler-ending.png",
         badEndingText: "The household turns as one against Mr. Higgins. He protests his innocence to the very end, but no one is listening anymore. As he is led away in chains, a shadow lingers in the dark halls of the manor — the true killer, still free, still watching."
     },
@@ -105,6 +117,18 @@ const CHARACTERS = {
                 answer: "\"I keep to my kitchen. Whatever happens in the rest of this house is none of my concern.\""
             }
         ],
+
+        // Only askable by a player who currently has the Kitchen Knife
+        // in their inventory (see #cookKnifeQuestion in
+        // phone/index.html and askCookAboutKnife in server.js).
+        // Intentionally left out of getClientCharacters() below, same
+        // reasoning as the Mysterious Person's revealedQuestions — the
+        // answer is only ever delivered through that dedicated event,
+        // not the general character data available all game.
+        knifeQuestion: {
+            question: "Why is this knife bloody?",
+            answer: "\"Oh, that? I prepared a steak for the master earlier tonight. Nothing more sinister than supper, I assure you.\""
+        },
 
         goodEndingImage: "/images/endings/good-ending.png",
         goodEndingText: "The final piece falls into place. Mrs. Ardell had been dosing the master's nightly tea for weeks — a slow, deliberate cruelty born of a secret affair with his own wife, and the fortune that would follow his death. Confronted with the truth, she does not deny it. Justice, at last, is served."

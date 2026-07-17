@@ -3,14 +3,39 @@
 <head>
     <title>Murder Mystery</title>
 
+    <!--
+        Without this, mobile browsers assume a fake ~980px-wide
+        viewport and scale the whole page down to fit — which is the
+        root cause of bars/popups/text looking too small on a phone.
+        maximum-scale is intentionally left out (and user-scalable is
+        NOT set to "no") so pinch-zoom still works; only double-tap
+        zoom is blocked, via touch-action below.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
     <style>
         :root {
-            --top-bar-height: 86px;
-            --inventory-height: 126px;
+            /* vh-based clamps rather than fixed pixels: on a tall
+               portrait phone this settles near the max (bars have
+               room to be comfortably tappable); on a short landscape
+               phone the same vh percentage naturally works out much
+               smaller (since landscape viewport height is much
+               smaller), so the bars stop eating a huge chunk of the
+               screen. No separate orientation media query needed. */
+            --top-bar-height: clamp(52px, 10vh, 92px);
+            --inventory-height: clamp(86px, 15vh, 136px);
         }
 
         * {
             box-sizing: border-box;
+        }
+
+        html {
+            /* Belt-and-suspenders alongside the touch-action rules
+               below: stops double-tap-to-zoom without touching
+               pinch-zoom, which stays available via the two-finger
+               gesture regardless of touch-action. */
+            touch-action: manipulation;
         }
 
         body {
@@ -20,6 +45,7 @@
             color: #f2e5c4;
             font-family: Arial, sans-serif;
             overflow: hidden;
+            touch-action: manipulation;
         }
 
         .box {
@@ -72,7 +98,8 @@
             display: none;
             position: relative;
             min-height: 100vh;
-            padding: 28px;
+            min-height: 100dvh;
+            padding: 14px;
             background-image:
                 linear-gradient(rgba(0, 0, 0, 0.38), rgba(0, 0, 0, 0.78)),
                 url("/images/intro-background.png");
@@ -84,36 +111,33 @@
             justify-content: center;
         }
 
-        #introMuteButton {
-            position: absolute;
-            top: 16px;
-            right: 16px;
-            z-index: 5;
-            width: 42px;
-            height: 42px;
-            min-height: 42px;
-            padding: 0;
-            margin: 0;
-            border-radius: 50%;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            background: rgba(0, 0, 0, 0.55);
-            color: white;
-            font-size: 18px;
-            line-height: 1;
-        }
-
         #phoneIntroBox {
-            width: min(100%, 520px);
-            padding: 24px;
+            width: min(100%, 560px);
+            max-height: 92vh;
+            max-height: 92dvh;
+            padding: 16px;
             background: rgba(0, 0, 0, 0.48);
             border: 1px solid rgba(242, 229, 196, 0.25);
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Only the story text scrolls, so the Enter button below it
+           stays reachable even on a small phone screen with a long
+           story (e.g. several players' names woven into the text). */
+        #phoneStoryTextScroll {
+            width: 100%;
+            max-height: 68vh;
+            max-height: 68dvh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         #phoneStoryText {
             margin: 0;
-            min-height: 245px;
-            font-size: 23px;
+            font-size: clamp(19px, 5.2vw, 27px);
             line-height: 1.45;
             white-space: pre-wrap;
             text-shadow: 2px 2px 4px black;
@@ -146,23 +170,29 @@
             width: 100%;
             height: var(--top-bar-height);
             z-index: 100;
-            padding: 10px 14px;
-            background: rgba(20, 10, 10, 0.98);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0 14px;
+            background: transparent;
             border-bottom: 1px solid #b58c5a;
         }
 
         #roomBar label {
-            display: block;
-            margin-bottom: 5px;
-            font-size: 14px;
+            margin: 0;
+            font-size: clamp(11px, 1.7vh, 14px);
             letter-spacing: 1px;
             text-transform: uppercase;
             color: #d6b57b;
+            white-space: nowrap;
         }
 
         #roomBar select {
-            min-height: 48px;
-            font-size: 20px;
+            flex: 1;
+            min-width: 0;
+            height: clamp(38px, 6.5vh, 52px);
+            min-height: 0;
+            font-size: clamp(15px, 2.4vh, 20px);
         }
 
         .gameContent {
@@ -293,16 +323,28 @@
             text-shadow: 1px 1px 2px black;
         }
 
+        /* Fully clickable, but no visible border/background/text — for
+           hotspots meant to blend invisibly into the room art (e.g. a
+           body outline on the floor) rather than announce themselves
+           with the usual dashed-border look. */
+        .invisibleHotspot {
+            border: none;
+            background: none;
+            color: transparent;
+        }
+
         /* Used when an itemHotspot sets iconHotspot: true (e.g. the
            attic's skull) — the item's own icon image sits visibly in
            the room instead of a plain dashed text button. No border/
-           background, since the icon itself is the visual. */
+           background, since the icon itself is the visual. No idle
+           bob animation here (unlike .characterHotspot below) — items
+           are inert props, so they stay perfectly still; only living
+           characters get the "breathing" motion. */
         .itemIconHotspot {
             border: none;
             background: none;
             object-fit: contain;
             filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
-            animation: characterIdleBob 3.2s ease-in-out infinite;
         }
 
         #basementPictureHotspot {
@@ -449,14 +491,14 @@
             bottom: calc(var(--inventory-height) + 25px);
             z-index: 200;
             transform: translateX(-50%);
-            width: min(360px, calc(100vw - 30px));
-            padding: 12px 16px;
+            width: min(380px, calc(100vw - 24px));
+            padding: 13px 17px;
             background: rgba(20, 10, 10, 0.95);
             border: 1px solid #b58c5a;
             color: #f2e5c4;
             text-align: center;
-            font-size: 16px;
-            line-height: 1.4;
+            font-size: 17px;
+            line-height: 1.45;
             box-shadow: 0 5px 20px rgba(0, 0, 0, 0.6);
         }
 
@@ -467,14 +509,17 @@
             width: 100%;
             height: var(--inventory-height);
             z-index: 100;
-            padding: 12px 14px;
-            background: rgba(20, 10, 10, 0.98);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 6px 14px;
+            background: transparent;
             border-top: 1px solid #b58c5a;
         }
 
         #inventoryTitle {
-            margin-bottom: 8px;
-            font-size: 14px;
+            margin: 0 0 4px;
+            font-size: clamp(10px, 1.7vh, 14px);
             letter-spacing: 1px;
             text-transform: uppercase;
             color: #d6b57b;
@@ -482,15 +527,16 @@
 
         #inventorySlots {
             display: flex;
+            align-items: center;
             gap: 10px;
             overflow-x: auto;
-            padding-bottom: 5px;
+            overflow-y: hidden;
         }
 
         .inventorySlot {
-            flex: 0 0 76px;
-            width: 76px;
-            height: 76px;
+            flex: 0 0 auto;
+            width: clamp(52px, 9vh, 80px);
+            height: clamp(52px, 9vh, 80px);
             border: 1px solid #80643c;
             background: rgba(0, 0, 0, 0.45);
             display: flex;
@@ -499,8 +545,8 @@
         }
 
         .inventorySlot img {
-            width: 66px;
-            height: 66px;
+            width: 86%;
+            height: 86%;
             object-fit: contain;
         }
 
@@ -519,18 +565,19 @@
             z-index: 1000;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             background: rgba(0, 0, 0, 0.82);
         }
 
         #itemActionSheetBox {
             position: relative;
-            width: min(360px, 100%);
+            width: min(400px, 100%);
             max-height: 88vh;
+            max-height: 88dvh;
             overflow-y: auto;
-            padding: 24px 22px 20px;
+            padding: 24px 18px 20px;
             text-align: center;
-            border: 2px solid #b58c5a;
+            border: 1px solid #b58c5a;
             border-radius: 10px;
             background: linear-gradient(160deg, #221515, #120a0a);
             box-shadow: 0 15px 50px black;
@@ -606,15 +653,130 @@
             z-index: 1000;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             background: rgba(0, 0, 0, 0.82);
         }
 
-        #itemPopupBox {
+        #diningLookPopupOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.82);
+        }
+
+        #diningPopupBox {
             width: min(360px, 100%);
+            max-height: 90vh;
+            max-height: 90dvh;
+            overflow: hidden;
             padding: 22px;
             text-align: center;
-            border: 2px solid #b58c5a;
+            border: 1px solid #b58c5a;
+            border-radius: 10px;
+            background: linear-gradient(160deg, #221515, #120a0a);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #diningPopupImage {
+            width: 100%;
+            max-height: 55vh;
+            max-height: 55dvh;
+            object-fit: contain;
+            margin-bottom: 14px;
+        }
+
+        #diningPopupDescription {
+            font-size: 15px;
+            line-height: 1.5;
+            color: #d6b57b;
+        }
+
+        #bodyOutlinePopupOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.82);
+        }
+
+        #bodyOutlinePopupBox {
+            width: min(360px, 100%);
+            max-height: 90vh;
+            max-height: 90dvh;
+            overflow-y: auto;
+            padding: 22px 18px;
+            text-align: center;
+            border: 1px solid #b58c5a;
+            border-radius: 10px;
+            background: linear-gradient(160deg, #221515, #120a0a);
+            box-shadow: 0 15px 50px black;
+        }
+
+        #bodyOutlinePopupDescription {
+            font-size: 16px;
+            line-height: 1.55;
+            color: #f2e5c4;
+        }
+
+        #safePopupOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.82);
+        }
+
+        #safePopupBox {
+            position: relative;
+            width: min(480px, 100%);
+            max-height: 90vh;
+            max-height: 90dvh;
+        }
+
+        #safePopupImage {
+            width: 100%;
+            max-height: 90vh;
+            max-height: 90dvh;
+            object-fit: contain;
+            display: block;
+            border-radius: 6px;
+        }
+
+        .safeItemHotspot {
+            position: absolute;
+            width: 14%;
+            height: 22%;
+            padding: 0;
+            border: none;
+            background: none;
+            cursor: pointer;
+        }
+
+        .safeItemHotspot img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.7));
+        }
+
+        #itemPopupBox {
+            width: min(380px, 100%);
+            max-height: 90vh;
+            max-height: 90dvh;
+            overflow-y: auto;
+            padding: 22px 18px;
+            text-align: center;
+            border: 1px solid #b58c5a;
             border-radius: 10px;
             background: linear-gradient(160deg, #221515, #120a0a);
             box-shadow: 0 15px 50px black;
@@ -672,18 +834,19 @@
             z-index: 1000;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             background: rgba(0, 0, 0, 0.86);
         }
 
         #characterPopupBox {
             position: relative;
-            width: min(400px, 100%);
-            max-height: 88vh;
+            width: min(440px, 100%);
+            max-height: 90vh;
+            max-height: 90dvh;
             overflow-y: auto;
-            padding: 24px 22px 20px;
+            padding: 24px 18px 20px;
             text-align: center;
-            border: 2px solid #b58c5a;
+            border: 1px solid #b58c5a;
             border-radius: 10px;
             background: linear-gradient(160deg, #221515, #120a0a);
             box-shadow: 0 15px 50px black;
@@ -716,7 +879,7 @@
 
         #characterPopupName {
             margin-bottom: 12px;
-            font-size: 18px;
+            font-size: 21px;
             letter-spacing: 1px;
             color: #f2e5c4;
         }
@@ -724,11 +887,11 @@
         #characterDialogueText {
             min-height: 76px;
             margin-bottom: 16px;
-            padding: 12px 14px;
+            padding: 13px 15px;
             border: 1px solid rgba(181, 140, 90, 0.5);
             background: rgba(0, 0, 0, 0.35);
             color: #f2e5c4;
-            font-size: 15px;
+            font-size: 17px;
             line-height: 1.55;
             text-align: left;
         }
@@ -743,12 +906,12 @@
             width: 100%;
             min-height: auto;
             margin: 0;
-            padding: 11px 13px;
+            padding: 13px 15px;
             border: 1px solid #b58c5a;
             border-radius: 4px;
             background: #3a1c1c;
             color: #f2e5c4;
-            font-size: 14px;
+            font-size: 16px;
             text-align: left;
         }
 
@@ -765,17 +928,18 @@
             z-index: 1000;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             background: rgba(0, 0, 0, 0.86);
         }
 
         #accusationMenuBox {
-            width: min(380px, 100%);
+            width: min(420px, 100%);
             max-height: 88vh;
+            max-height: 88dvh;
             overflow-y: auto;
-            padding: 24px 22px;
+            padding: 24px 18px;
             text-align: center;
-            border: 2px solid #b58c5a;
+            border: 1px solid #b58c5a;
             border-radius: 10px;
             background: linear-gradient(160deg, #221515, #120a0a);
             box-shadow: 0 15px 50px black;
@@ -838,17 +1002,18 @@
             z-index: 1200;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             background: rgba(0, 0, 0, 0.9);
         }
 
         #votingBox {
-            width: min(380px, 100%);
+            width: min(420px, 100%);
             max-height: 88vh;
+            max-height: 88dvh;
             overflow-y: auto;
-            padding: 26px 22px;
+            padding: 26px 18px;
             text-align: center;
-            border: 2px solid #b58c5a;
+            border: 1px solid #b58c5a;
             border-radius: 10px;
             background: linear-gradient(160deg, #221515, #120a0a);
             box-shadow: 0 15px 50px black;
@@ -896,7 +1061,7 @@
             z-index: 1000;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             background: rgba(0, 0, 0, 0.86);
         }
 
@@ -904,7 +1069,7 @@
             width: min(420px, 100%);
             padding: 24px 20px;
             text-align: center;
-            border: 2px solid #b58c5a;
+            border: 1px solid #b58c5a;
             border-radius: 10px;
             background: linear-gradient(160deg, #221515, #120a0a);
             box-shadow: 0 15px 50px black;
@@ -1015,13 +1180,13 @@
             z-index: 1000;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 16px;
             background: rgba(0, 0, 0, 0.82);
         }
 
         #safeKeypad {
             width: min(390px, 100%);
-            padding: 20px;
+            padding: 16px;
             border: 2px solid #6d6d6d;
             border-radius: 12px;
             background:
@@ -1099,26 +1264,10 @@
         }
 
         @media (max-width: 420px) {
-            :root {
-                --top-bar-height: 84px;
-                --inventory-height: 118px;
-            }
-
             input,
             button,
             select {
                 font-size: 18px;
-            }
-
-            .inventorySlot {
-                flex-basis: 70px;
-                width: 70px;
-                height: 70px;
-            }
-
-            .inventorySlot img {
-                width: 60px;
-                height: 60px;
             }
         }
 
@@ -1145,10 +1294,10 @@
     </div>
 
     <div id="introScreen">
-        <button id="introMuteButton" type="button" onclick="togglePhoneMute()" aria-label="Toggle sound"></button>
-
         <div id="phoneIntroBox">
-            <p id="phoneStoryText"></p><span class="cursor"></span>
+            <div id="phoneStoryTextScroll">
+                <p id="phoneStoryText"></p><span class="cursor"></span>
+            </div>
             <button id="phoneEnterButton" onclick="enterMansion()">
                 Enter the Mansion
             </button>
@@ -1217,9 +1366,9 @@
 
                     <button
                         id="accuseHotspot"
-                        class="hotspot"
+                        class="hotspot invisibleHotspot"
                         onclick="openAccusationMenu()"
-                        style="display: none; left: 40%; top: 55%; width: 20%; height: 30%;"
+                        style="display: none; left: 19%; top: 36%; width: 6%; height: 10%;"
                     >
                         Make an Accusation
                     </button>
@@ -1231,6 +1380,54 @@
                         style="display: none; left: 8%; top: 30%; width: 16%; height: 40%;"
                     >
                         Piano
+                    </button>
+
+                    <!--
+                        Kitchen fireplace — see clickFireHotspot in
+                        server.js for the 3-step logic (nothing without
+                        water / extinguish with water / claim the
+                        burned note once it's out). Position is a
+                        starting guess — nudge left/top/width/height to
+                        match your kitchen.jpg once you can see it
+                        rendered.
+                    -->
+                    <button
+                        id="fireHotspot"
+                        class="hotspot"
+                        onclick="clickFireHotspot()"
+                        style="display: none; left: 60%; top: 42%; width: 16%; height: 34%;"
+                    >
+                        Fireplace
+                    </button>
+
+                    <!--
+                        Dining room "look at the plate" flavor hotspot —
+                        see openDiningLookPopup() below. Purely cosmetic,
+                        no server round trip needed.
+                    -->
+                    <button
+                        id="diningLookHotspot"
+                        class="hotspot"
+                        onclick="openDiningLookPopup()"
+                        style="display: none; left: 42%; top: 78%; width: 16%; height: 16%;"
+                    >
+                        Look closer
+                    </button>
+
+                    <!--
+                        Lobby body outline — where the victim was found.
+                        Invisible on purpose (blends into the floor
+                        rather than announcing itself like a normal
+                        hotspot). Purely cosmetic flavor text, no server
+                        round trip needed — see openBodyOutlinePopup().
+                    -->
+                    <button
+                        id="bodyOutlineHotspot"
+                        class="hotspot invisibleHotspot"
+                        onclick="openBodyOutlinePopup()"
+                        style="display: none; left: 32%; top: 71%; width: 30%; height: 18%;"
+                    >
+                        Body outline
                     </button>
 
                     <div id="flashlightOverlay"></div>
@@ -1285,6 +1482,52 @@
                 <img id="itemPopupImage" src="" alt="">
                 <div id="itemPopupName"></div>
                 <div id="itemPopupDescription"></div>
+            </div>
+        </div>
+
+        <!--
+            Dining room "look closer" flavor popup — see
+            openDiningLookPopup()/closeDiningLookPopup() below. Tapping
+            anywhere on the overlay closes it, same as the item popup.
+        -->
+        <div id="diningLookPopupOverlay" onclick="closeDiningLookPopup()">
+            <div id="diningPopupBox">
+                <img id="diningPopupImage" src="/images/props/dining-plate.png" alt="A barely-touched plate of food">
+                <div id="diningPopupDescription">Seems like he barely touched his food.</div>
+            </div>
+        </div>
+
+        <!--
+            Lobby body outline flavor popup — text only, no image. See
+            openBodyOutlinePopup()/closeBodyOutlinePopup() below.
+        -->
+        <div id="bodyOutlinePopupOverlay" onclick="closeBodyOutlinePopup()">
+            <div id="bodyOutlinePopupBox">
+                <div id="bodyOutlinePopupDescription">The body was found here on the lobby floor. Seems like the victim stumbled down the stairs.</div>
+            </div>
+        </div>
+
+        <!--
+            Shown once the safe is open (see socket.on("safeEntered")
+            below). Opening the safe no longer moves the player to a
+            separate room — this just pops up over the basement, with
+            a couple of item hotspots inside. Tapping the dark backdrop
+            (outside the safe image) closes it; tapping an item inside
+            does not. "Safe Item 1"/"Safe Item 2" are placeholders —
+            swap inspectSafeItem()'s messages and icons for real items
+            once you've decided what's inside.
+        -->
+        <div id="safePopupOverlay" onclick="closeSafePopup()">
+            <div id="safePopupBox" onclick="event.stopPropagation()">
+                <img id="safePopupImage" src="/images/rooms/emptysafe.png" alt="The open safe">
+
+                <button type="button" class="safeItemHotspot" style="left: 30%; top: 38%;" onclick="inspectSafeItem(1)">
+                    <img src="/images/items/basement-key.png" alt="Safe Item 1">
+                </button>
+
+                <button type="button" class="safeItemHotspot" style="left: 62%; top: 45%;" onclick="inspectSafeItem(2)">
+                    <img src="/images/items/skull.png" alt="Safe Item 2">
+                </button>
             </div>
         </div>
 
@@ -1437,11 +1680,6 @@
          5th) — see clickCatHotspot()/catHotspotSound below. -->
     <audio id="catSoundElement" preload="auto"></audio>
 
-    <!-- Loops for as long as the intro (story) screen is showing. -->
-    <audio id="introMusicElement" preload="auto" loop>
-        <source src="/sounds/intro-music.mp3" type="audio/mpeg">
-    </audio>
-
     <!-- Played whenever an item leaves this player's inventory for a
          reason other than picking a fresh one up from a room (given to
          another player, or consumed by a puzzle) — see the itemRemoved
@@ -1454,6 +1692,20 @@
 
     <script>
         const socket = io();
+
+        // Fallback for browsers that don't fully honor touch-action:
+        // manipulation for double-tap zoom. Only blocks the default on
+        // a genuine double-tap (two touchend events, one finger, close
+        // together); a pinch gesture involves two simultaneous touch
+        // points and never reaches this check, so it's untouched.
+        let lastTouchEndTime = 0;
+        document.addEventListener("touchend", (event) => {
+            const now = Date.now();
+            if (now - lastTouchEndTime <= 300 && event.touches.length === 0) {
+                event.preventDefault();
+            }
+            lastTouchEndTime = now;
+        }, { passive: false });
 
         let joinedLobby = null;
         let inventory = [];
@@ -1579,53 +1831,15 @@
         const crowSoundElement = document.getElementById("crowSoundElement");
         const catSoundElement = document.getElementById("catSoundElement");
         const pianoHotspot = document.getElementById("pianoHotspot");
-        const introMusicElement = document.getElementById("introMusicElement");
         const itemRemovedSoundElement = document.getElementById("itemRemovedSoundElement");
-        const introMuteButton = document.getElementById("introMuteButton");
 
-        // ------------------------------------------------------------
-        // A single mute preference for this device, applied to every
-        // sound/music element on the phone. Persisted so it carries
-        // across refreshes and reconnects. The toggle button currently
-        // only lives on the intro screen, but the mute STATE itself is
-        // global — every audio element below respects it.
-        // ------------------------------------------------------------
-        let isPhoneMuted = localStorage.getItem("phoneMuted") === "true";
-
-        function applyPhoneMuteState() {
-            [
-                keypadSound,
-                pickupSoundElement,
-                passageOpenSoundElement,
-                crowSoundElement,
-                catSoundElement,
-                introMusicElement,
-                itemRemovedSoundElement
-            ].forEach(element => {
-                if (element) element.muted = isPhoneMuted;
-            });
-
-            if (introMuteButton) {
-                introMuteButton.textContent = isPhoneMuted ? "\u{1F507}" : "\u{1F50A}";
-            }
-        }
-
-        function togglePhoneMute() {
-            isPhoneMuted = !isPhoneMuted;
-            localStorage.setItem("phoneMuted", isPhoneMuted ? "true" : "false");
-            applyPhoneMuteState();
-        }
-
-        applyPhoneMuteState();
-
-        const story = [
-            "October 31st, 1998.",
-            "",
-            "You have been invited to an isolated mansion.",
-            "Tonight, someone will not leave alive.",
-            "",
-            "Find the truth before the killer finds you."
-        ].join("\n");
+        // Populated from the server — see socket.on("introStory") below
+        // and startIntro() in tv/intro.html, which is where this text
+        // actually gets built (host's own local date/time, plus the
+        // player names woven in). Kept identical on phone and TV rather
+        // than each device generating its own version.
+        let story = "";
+        let introStoryPending = false;
 
         const typingSpeed = 42;
 
@@ -1860,7 +2074,7 @@
         });
 
         socket.on("safeEntered", () => {
-            showGameMessage("The safe door opens.");
+            openSafePopup();
         });
 
         function selectRoom(room) {
@@ -2148,6 +2362,9 @@
             updateBasementPuzzle();
             updateAccuseHotspotVisibility();
             updatePianoHotspotVisibility();
+            updateFireHotspot(room);
+            updateDiningHotspot(room);
+            updateBodyOutlineHotspot(room);
         }
 
         roomImage.addEventListener("error", () => {
@@ -2302,25 +2519,11 @@
             document.getElementById("introScreen").style.display = "flex";
             document.getElementById("gameScreen").style.display = "none";
 
+            if (!story && joinedLobby && joinedLobby.introStory) {
+                story = joinedLobby.introStory;
+            }
+
             startPhoneIntro();
-            playIntroMusic();
-        }
-
-        function playIntroMusic() {
-            if (!introMusicElement) return;
-
-            introMusicElement.currentTime = 0;
-
-            introMusicElement.play().catch(() => {
-                // Sound is optional. Browsers may block audio until interaction.
-            });
-        }
-
-        function stopIntroMusic() {
-            if (!introMusicElement) return;
-
-            introMusicElement.pause();
-            introMusicElement.currentTime = 0;
         }
 
         function showGameScreen() {
@@ -2328,8 +2531,6 @@
             document.getElementById("waitingScreen").style.display = "none";
             document.getElementById("introScreen").style.display = "none";
             document.getElementById("gameScreen").style.display = "block";
-
-            stopIntroMusic();
 
             if (joinedLobby) {
                 updatePhoneLobby(joinedLobby);
@@ -2340,8 +2541,28 @@
             if (introStarted) return;
 
             introStarted = true;
+
+            if (!story) {
+                introStoryPending = true;
+                return;
+            }
+
             typeNextPhoneLetter();
         }
+
+        // Fired by the server once the TV has built the story text (see
+        // introStoryReady in tv/intro.html). Also covers a player who's
+        // sitting on the intro screen waiting when it arrives.
+        socket.on("introStory", (text) => {
+            if (typeof text !== "string" || !text) return;
+
+            story = text;
+
+            if (introStoryPending) {
+                introStoryPending = false;
+                typeNextPhoneLetter();
+            }
+        });
 
         function typeNextPhoneLetter() {
             if (letterIndex >= story.length) {
@@ -2430,6 +2651,7 @@
                 const button = document.createElement("button");
                 button.type = "button";
                 button.className = "hotspot doorHotspot";
+                if (door.invisible) button.classList.add("invisibleHotspot");
                 button.style.display = "block";
                 button.style.left = door.left;
                 button.style.top = door.top;
@@ -2615,6 +2837,23 @@
 
             renderQuestionButtons(character.questions);
 
+            // The Cook has one extra question, only shown to a player
+            // who's currently carrying the Kitchen Knife — see
+            // askCookAboutKnife in server.js. The answer itself isn't
+            // known client-side (it's spoiler content, same as the
+            // Mysterious Person's revealedQuestions), so this button
+            // has to ask the server for it rather than just showing
+            // pre-loaded text like the normal questions above.
+            if (characterId === "cook" && inventory.some(item => item.id === "kitchen-knife")) {
+                addCookKnifeQuestionButton();
+            }
+
+            // Available to every player, lobby-wide, once anyone has
+            // moved the basement picture and revealed the safe.
+            if (characterId === "butler" && joinedLobby?.basementPictureMoved) {
+                addButlerSafeQuestionButton();
+            }
+
             document.getElementById("characterPopupOverlay").style.display = "flex";
 
             // Marks this character as a known suspect lobby-wide (shared
@@ -2629,6 +2868,56 @@
                 });
             }
         }
+
+        function addCookKnifeQuestionButton() {
+            const list = document.getElementById("characterQuestionList");
+
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "characterQuestionButton";
+            button.textContent = "Why is this knife bloody?";
+
+            button.onclick = () => {
+                if (!joinedLobby) return;
+
+                socket.emit("askCookAboutKnife", {
+                    code: joinedLobby.code,
+                    playerToken
+                });
+            };
+
+            list.appendChild(button);
+        }
+
+        // The answer to the question above — only ever delivered here,
+        // to whichever player asked it.
+        socket.on("cookKnifeAnswer", (data) => {
+            document.getElementById("characterDialogueText").textContent = data.answer;
+        });
+
+        function addButlerSafeQuestionButton() {
+            const list = document.getElementById("characterQuestionList");
+
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "characterQuestionButton";
+            button.textContent = "What do you know about the safe?";
+
+            button.onclick = () => {
+                if (!joinedLobby) return;
+
+                socket.emit("askButlerAboutSafe", {
+                    code: joinedLobby.code,
+                    playerToken
+                });
+            };
+
+            list.appendChild(button);
+        }
+
+        socket.on("butlerSafeAnswer", (data) => {
+            document.getElementById("characterDialogueText").textContent = data.answer;
+        });
 
         // The Mysterious Person's entire interaction is server-driven —
         // the server decides whether to reveal his hint (based on
@@ -3052,6 +3341,73 @@
             overlay.style.display = "flex";
         }
 
+        function updateFireHotspot(room) {
+            const hotspot = document.getElementById("fireHotspot");
+            if (!hotspot) return;
+
+            const noteTaken = Boolean(joinedLobby && joinedLobby.kitchenBurnedNoteTaken);
+
+            hotspot.style.display = (room === "kitchen" && !noteTaken) ? "block" : "none";
+        }
+
+        function clickFireHotspot() {
+            if (!joinedLobby) return;
+
+            socket.emit("clickFireHotspot", {
+                code: joinedLobby.code,
+                playerToken
+            });
+        }
+
+        function updateDiningHotspot(room) {
+            const hotspot = document.getElementById("diningLookHotspot");
+            if (!hotspot) return;
+
+            hotspot.style.display = room === "dining" ? "block" : "none";
+        }
+
+        function openDiningLookPopup() {
+            document.getElementById("diningLookPopupOverlay").style.display = "flex";
+        }
+
+        function closeDiningLookPopup() {
+            document.getElementById("diningLookPopupOverlay").style.display = "none";
+        }
+
+        function updateBodyOutlineHotspot(room) {
+            const hotspot = document.getElementById("bodyOutlineHotspot");
+            if (!hotspot) return;
+
+            hotspot.style.display = room === "lobby" ? "block" : "none";
+        }
+
+        function openBodyOutlinePopup() {
+            document.getElementById("bodyOutlinePopupOverlay").style.display = "flex";
+        }
+
+        function closeBodyOutlinePopup() {
+            document.getElementById("bodyOutlinePopupOverlay").style.display = "none";
+        }
+
+        // Opened once the safe is unlocked (see socket.on("safeEntered")
+        // below) instead of moving the player into a separate room.
+        function openSafePopup() {
+            closeCharacterPopup();
+            closeItemPopup();
+            document.getElementById("safePopupOverlay").style.display = "flex";
+        }
+
+        function closeSafePopup() {
+            document.getElementById("safePopupOverlay").style.display = "none";
+        }
+
+        // Placeholders for now — "Safe Item 1"/"Safe Item 2" — swap
+        // these for a real pickupItem-style flow once you've decided
+        // what actually lives in the safe.
+        function inspectSafeItem(number) {
+            showGameMessage(`Safe Item ${number}`);
+        }
+
         function updateBasementPuzzle() {
             if (!joinedLobby) return;
 
@@ -3394,7 +3750,9 @@
             document.getElementById("votingOverlay").style.display = "none";
             document.getElementById("endingScreen").style.display = "none";
             endingTypewriterStarted = false;
-            stopIntroMusic();
+            introStarted = false;
+            introStoryPending = false;
+            story = "";
             lastRenderedRoom = null;
             renderInventory();
             forgetSession();
@@ -3408,6 +3766,8 @@
             joinedLobby = null;
             inventory = [];
             introStarted = false;
+            introStoryPending = false;
+            story = "";
             letterIndex = 0;
 
             phoneStoryText.textContent = "";
@@ -3422,7 +3782,6 @@
             document.getElementById("votingOverlay").style.display = "none";
             document.getElementById("endingScreen").style.display = "none";
             endingTypewriterStarted = false;
-            stopIntroMusic();
             lastRenderedRoom = null;
             renderInventory();
             forgetSession();

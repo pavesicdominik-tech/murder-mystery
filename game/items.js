@@ -48,6 +48,47 @@ const ITEMS = {
         name: "Skull",
         icon: "/images/items/skull.png",
         description: "A small carved skull. Strange energy seems to radiate from it."
+    },
+
+    "glass-of-water": {
+        id: "glass-of-water",
+        name: "Glass of Water",
+        icon: "/images/items/glass-of-water.png",
+        description: "A glass filled with water. Might be useful somewhere."
+    },
+
+    "kitchen-knife": {
+        id: "kitchen-knife",
+        name: "Kitchen Knife",
+        icon: "/images/items/kitchen-knife.png",
+        description: "A bloody knife. I wonder whose blood it is."
+    },
+
+    // Two different icons on purpose: `icon` is what shows in the
+    // room (a rolled-up scrap of paper) and is what flies across the
+    // screen during the pickup animation; `inventoryIcon` is what
+    // replaces it once it's actually sitting in the inventory slot (the
+    // note, unrolled and wrinkled). See pickupItem in server.js, which
+    // is what picks inventoryIcon over icon when saving it to the
+    // player's inventory.
+    "wrinkled-note": {
+        id: "wrinkled-note",
+        name: "Wrinkled Note",
+        icon: "/images/items/paper-roll.png",
+        inventoryIcon: "/images/items/wrinkled-paper.png",
+        popupImage: "/images/items/wrinkled-paper.png",
+        description: "A debt notice, crumpled and re-smoothed more than once. It seems the son owed someone a considerable amount of money."
+    },
+
+    // No placement below for this one — it's never sitting in a room
+    // to pick up. It's granted directly to a player's inventory by the
+    // kitchen fireplace hotspot once the fire has been put out (see
+    // clickFireHotspot in server.js).
+    "burned-note": {
+        id: "burned-note",
+        name: "Burned Note",
+        icon: "/images/items/burned-note.png",
+        description: "A scrap of paper, scorched at the edges. Barely readable."
     }
 
     // Example of how a future item with its own pickup sound would
@@ -81,6 +122,24 @@ const ITEM_PLACEMENTS = [
         placementId: "attic-skull",
         itemId: "skull",
         room: "attic"
+    },
+
+    {
+        placementId: "powder-room-glass-of-water",
+        itemId: "glass-of-water",
+        room: "powder-room"
+    },
+
+    {
+        placementId: "kitchen-knife",
+        itemId: "kitchen-knife",
+        room: "kitchen"
+    },
+
+    {
+        placementId: "son-bedroom-wrinkled-note",
+        itemId: "wrinkled-note",
+        room: "son-bedroom"
     }
 
     // Example of a future placement:

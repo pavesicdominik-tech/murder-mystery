@@ -783,6 +783,10 @@
         players.forEach(player => {
             const room = player.currentRoom || "lobby";
 
+            // The Attic is meant to stay off the map — don't reveal a
+            // player's name/location once they're up there.
+            if (room === "attic") return;
+
             if (!playersByRoom[room]) {
                 playersByRoom[room] = [];
             }

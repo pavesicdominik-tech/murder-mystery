@@ -34,20 +34,43 @@
         }
 
         #textBox {
-            width: min(900px, 82vw);
-            min-height: 260px;
-            padding: 35px;
+            width: min(900px, 88vw);
+            max-height: 84vh;
+            padding: clamp(18px, 3vw, 35px);
             box-sizing: border-box;
             background: rgba(0, 0, 0, 0.42);
             border: 1px solid rgba(242, 229, 196, 0.25);
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Only the story text scrolls, so the Enter button below it
+           stays reachable no matter how long the text runs (e.g. a
+           lobby with many players' names woven into the case). */
+        #storyTextScroll {
+            width: 100%;
+            max-height: 62vh;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(242, 229, 196, 0.4) transparent;
+        }
+
+        #storyTextScroll::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #storyTextScroll::-webkit-scrollbar-thumb {
+            background: rgba(242, 229, 196, 0.35);
+            border-radius: 3px;
         }
 
         #storyText {
             margin: 0;
-            font-size: clamp(24px, 3vw, 44px);
-            line-height: 1.55;
+            font-size: clamp(18px, 2.6vw, 40px);
+            line-height: 1.5;
             white-space: pre-wrap;
             text-shadow: 2px 2px 4px black;
         }
@@ -90,6 +113,23 @@
             opacity: 0.55;
         }
 
+        #muteButton {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 21;
+            width: 42px;
+            height: 42px;
+            padding: 0;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            background: rgba(0, 0, 0, 0.55);
+            color: white;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
         @keyframes blink {
             50% {
                 opacity: 0;
@@ -101,7 +141,9 @@
 <body>
     <div id="intro">
         <div id="textBox">
-            <p id="storyText"></p><span class="cursor"></span>
+            <div id="storyTextScroll">
+                <p id="storyText"></p><span class="cursor"></span>
+            </div>
 
             <button id="enterButton" onclick="enterMansion()">
                 Enter the Mansion
@@ -111,7 +153,10 @@
 
     <div id="connectionStatus">Connecting…</div>
 
+    <button id="muteButton" type="button" onclick="toggleMute()" aria-label="Toggle sound"></button>
+
     <audio id="typeSound" src="/sounds/typewriter.mp3"></audio>
+    <audio id="introMusicElement" src="/sounds/intro-music.mp3" loop></audio>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -122,6 +167,25 @@
         const typeSound = document.getElementById("typeSound");
         const enterButton = document.getElementById("enterButton");
         const connectionStatus = document.getElementById("connectionStatus");
+        const introMusicElement = document.getElementById("introMusicElement");
+        const muteButton = document.getElementById("muteButton");
+
+        // Shared with tv/index.html and tv/game.html via localStorage,
+        // so muting on any TV screen stays muted on the others.
+        let isMuted = localStorage.getItem("tvMuted") === "true";
+
+        function applyMuteState() {
+            introMusicElement.muted = isMuted;
+            muteButton.textContent = isMuted ? "\u{1F507}" : "\u{1F50A}";
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            localStorage.setItem("tvMuted", isMuted ? "true" : "false");
+            applyMuteState();
+        }
+
+        applyMuteState();
 
         let tvSessionId = localStorage.getItem("tvSessionId");
         let lobbyRestored = false;
@@ -178,23 +242,60 @@
             connectionStatus.innerText = "Reconnecting…";
         });
 
-        const story = [
-            "October 31st, 1998.",
-            "",
-            "You have been invited to an isolated mansion.",
-            "Tonight, someone will not leave alive.",
-            "",
-            "Find the truth before the killer finds you."
-        ].join("\n");
-
         let letterIndex = 0;
         const typingSpeed = 42;
         let introStarted = false;
+        let story = "";
+
+        // Uses this TV's own local clock — since the TV is the host
+        // device, that's the host's time zone with no extra plumbing
+        // needed.
+        function buildStory(lobby) {
+            const now = new Date();
+
+            const dateStr = now.toLocaleDateString(undefined, {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric"
+            });
+
+            const timeStr = now.toLocaleTimeString(undefined, {
+                hour: "numeric",
+                minute: "2-digit"
+            });
+
+            const detectiveNames = (lobby.players || [])
+                .map(p => p.name)
+                .filter(Boolean)
+                .join(", ");
+
+            const detectiveLine = detectiveNames
+                ? `A team of detectives — ${detectiveNames} — was called to the scene to investigate this unusual death.`
+                : "A team of detectives was called to the scene to investigate this unusual death.";
+
+            return [
+                `${dateStr}, ${timeStr}.`,
+                "",
+                "The owner of this manor was found dead in the lobby, at the foot of the stairs, discovered by the butler.",
+                "The body bore no wounds, suggesting a tragic accident.",
+                "",
+                detectiveLine
+            ].join("\n");
+        }
 
         function startIntro() {
             if (introStarted) return;
 
             introStarted = true;
+            story = buildStory(currentLobby || {});
+
+            if (currentLobby) {
+                socket.emit("introStoryReady", {
+                    code: currentLobby.code,
+                    story
+                });
+            }
 
             setTimeout(() => {
                 intro.style.opacity = "1";
@@ -203,6 +304,11 @@
             setTimeout(() => {
                 typeNextLetter();
             }, 1600);
+
+            introMusicElement.currentTime = 0;
+            introMusicElement.play().catch(() => {
+                // Sound is optional. Browsers may block audio until interaction.
+            });
         }
 
         function typeNextLetter() {
@@ -226,6 +332,9 @@
 
         function enterMansion() {
             if (!currentLobby) return;
+
+            introMusicElement.pause();
+            introMusicElement.currentTime = 0;
 
             socket.emit("enterMansion", {
                 code: currentLobby.code

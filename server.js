@@ -40,6 +40,20 @@ const PLAYER_RECONNECT_GRACE_MS = 5 * 60 * 1000;
 const EMPTY_WAITING_LOBBY_MS = 5 * 60 * 1000;
 const MAX_LOBBY_LIFETIME_MS = 5 * 60 * 60 * 1000;
 
+// No one — not a player on their phone, not the TV's group-accuse
+// button — can start an accusation vote until this long after
+// lobby.gameStartedAt (set when enterMansion fires). On top of that,
+// each individual player also has their own ACCUSATION_COOLDOWN_MS
+// between accusations they personally start (see player.lastAccusationAt
+// in startAccusation below); that second cooldown doesn't apply to the
+// TV's group-accuse button, since that isn't tied to one player.
+const ACCUSATION_UNLOCK_DELAY_MS = 60 * 1000;
+const ACCUSATION_COOLDOWN_MS = 60 * 1000;
+
+function isTooSoonToAccuse(lobby) {
+    return !lobby.gameStartedAt || (Date.now() - lobby.gameStartedAt) < ACCUSATION_UNLOCK_DELAY_MS;
+}
+
 function closeLobby(code, reason = "Lobby closed") {
     const lobby = lobbies[code];
     if (!lobby) return;
@@ -101,9 +115,23 @@ function clearPlayerDisconnectTimer(code, playerToken) {
     }
 }
 
+// Strips server-only secrets out of the lobby object before it's ever
+// sent to a browser. safeCode is the important one here — without
+// this, the safe combination would be readable in plain text by
+// anyone inspecting WebSocket traffic in dev tools, which would
+// bypass the safe puzzle entirely. Add any future "answer" fields
+// here too, the same way game/characters.js keeps isMurderer etc. out
+// of getClientCharacters().
+function sanitizeLobbyForClient(lobby) {
+    if (!lobby) return lobby;
+
+    const { safeCode, ...clientSafeLobby } = lobby;
+    return clientSafeLobby;
+}
+
 function sendLobbyUpdate(lobby) {
     if (!lobby) return;
-    io.to(lobby.code).emit("lobbyUpdate", lobby);
+    io.to(lobby.code).emit("lobbyUpdate", sanitizeLobbyForClient(lobby));
 }
 
 function sendPrivatePlayerUpdate(socket, lobby, playerToken) {
@@ -320,7 +348,7 @@ io.on("connection", (socket) => {
             tvDisconnectTimers.delete(existingLobby.code);
         }
 
-        socket.emit("lobbyCreated", existingLobby);
+        socket.emit("lobbyCreated", sanitizeLobbyForClient(existingLobby));
         sendLobbyUpdate(existingLobby);
     });
 
@@ -390,7 +418,7 @@ io.on("connection", (socket) => {
         const qr = await QRCode.toDataURL(joinLink);
 
         socket.emit("lobbyCreated", {
-            ...lobby,
+            ...sanitizeLobbyForClient(lobby),
             qr
         });
 
@@ -457,7 +485,7 @@ io.on("connection", (socket) => {
         clearPlayerDisconnectTimer(lobby.code, token);
 
         socket.emit("joinSuccess", {
-            ...lobby,
+            ...sanitizeLobbyForClient(lobby),
             playerToken: token
         });
 
@@ -557,7 +585,7 @@ io.on("connection", (socket) => {
         player.inventory.push({
             id: itemDetails.id,
             name: itemDetails.name,
-            icon: itemDetails.icon,
+            icon: itemDetails.inventoryIcon || itemDetails.icon,
             popupImage: itemDetails.popupImage || itemDetails.icon,
             description: itemDetails.description
         });
@@ -752,6 +780,16 @@ io.on("connection", (socket) => {
             return;
         }
 
+        if (isTooSoonToAccuse(lobby)) {
+            socket.emit("gameMessage", "It's too soon to accuse.");
+            return;
+        }
+
+        if (player.lastAccusationAt && Date.now() - player.lastAccusationAt < ACCUSATION_COOLDOWN_MS) {
+            socket.emit("gameMessage", "Wait till you can accuse again.");
+            return;
+        }
+
         if (player.currentRoom !== "lobby") {
             socket.emit("gameMessage", "You need to be in the Lobby to make an accusation.");
             return;
@@ -768,6 +806,8 @@ io.on("connection", (socket) => {
             socket.emit("gameMessage", "No one has any reason to suspect them yet.");
             return;
         }
+
+        player.lastAccusationAt = Date.now();
 
         lobby.accusation = {
             accuserToken: playerToken,
@@ -962,6 +1002,151 @@ io.on("connection", (socket) => {
         socket.emit("catHotspotSound", { sound: sound || null });
     });
 
+    // Kitchen fireplace hotspot — a small multi-step puzzle, lobby-wide
+    // (like the basement picture/safe), not per-player:
+    //   1. lobby.kitchenFireExtinguished is false, player has no glass
+    //      of water: just a flavor message, nothing happens.
+    //   2. lobby.kitchenFireExtinguished is false, player HAS a glass
+    //      of water: the water is consumed, the flag flips (which
+    //      swaps the kitchen's image via altImage/altImageFlag in
+    //      game/rooms.js, same mechanism as the library's piano
+    //      passage), and a message confirms it.
+    //   3. lobby.kitchenFireExtinguished is true, nobody has claimed
+    //      the note yet: this click gives the clicking player a
+    //      "burned-note" item (reusing the normal pickupSuccess event
+    //      so the client gets the same fly-to-inventory animation/
+    //      sound as any other item pickup) and permanently flips
+    //      kitchenBurnedNoteTaken, which is what hides the hotspot for
+    //      everyone from then on (see updateFireHotspot() in
+    //      phone/index.html).
+    socket.on("clickFireHotspot", ({ code, playerToken }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (player.currentRoom !== "kitchen") return;
+        if (lobby.kitchenBurnedNoteTaken) return;
+
+        player.inventory = player.inventory || [];
+
+        if (!lobby.kitchenFireExtinguished) {
+            const waterIndex = player.inventory.findIndex(
+                item => item.id === "glass-of-water"
+            );
+
+            if (waterIndex === -1) {
+                socket.emit(
+                    "gameMessage",
+                    "There's something in the fire but I can't reach it."
+                );
+                return;
+            }
+
+            player.inventory.splice(waterIndex, 1);
+            lobby.kitchenFireExtinguished = true;
+
+            socket.emit("gameMessage", "You've extinguished the fire.");
+            socket.emit("itemRemoved", { sound: DEFAULT_PICKUP_SOUND });
+
+            sendTvNotification(lobby, `${player.name} extinguished the fire in the Kitchen.`);
+            sendPrivatePlayerUpdate(socket, lobby, playerToken);
+            sendLobbyUpdate(lobby);
+            return;
+        }
+
+        const noteDetails = ITEMS["burned-note"];
+        if (!noteDetails) return;
+
+        if (player.inventory.some(item => item.id === noteDetails.id)) {
+            lobby.kitchenBurnedNoteTaken = true;
+            sendLobbyUpdate(lobby);
+            return;
+        }
+
+        player.inventory.push({
+            id: noteDetails.id,
+            name: noteDetails.name,
+            icon: noteDetails.inventoryIcon || noteDetails.icon,
+            popupImage: noteDetails.popupImage || noteDetails.icon,
+            description: noteDetails.description
+        });
+
+        lobby.kitchenBurnedNoteTaken = true;
+
+        socket.emit("pickupSuccess", {
+            placementId: "kitchen-burned-note",
+            id: noteDetails.id,
+            name: noteDetails.name,
+            icon: noteDetails.icon,
+            sound: DEFAULT_PICKUP_SOUND
+        });
+
+        sendTvNotification(lobby, `${player.name} found a burned note in the Kitchen.`);
+        sendPrivatePlayerUpdate(socket, lobby, playerToken);
+        sendLobbyUpdate(lobby);
+    });
+
+    // The Cook has one extra, hidden question — only askable by a
+    // player who currently has the Kitchen Knife in their inventory.
+    // Same reasoning as the Mysterious Person's revealedQuestions in
+    // game/characters.js: the answer text lives in a field
+    // getClientCharacters() never sends to the browser, so it can only
+    // ever be learned through this round trip, not by reading page
+    // data in dev tools.
+    socket.on("askCookAboutKnife", ({ code, playerToken }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        const hasKnife = (player.inventory || []).some(
+            item => item.id === "kitchen-knife"
+        );
+        if (!hasKnife) return;
+
+        const knifeQuestion = CHARACTERS.cook?.knifeQuestion;
+        if (!knifeQuestion) return;
+
+        socket.emit("cookKnifeAnswer", knifeQuestion);
+    });
+
+    // Unlike the Cook's knife question (gated on the asking player's
+    // own inventory), this is gated on lobby-wide state: any player can
+    // ask it, as soon as anyone has moved the basement picture aside
+    // and revealed the safe.
+    socket.on("askButlerAboutSafe", ({ code, playerToken }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (!lobby.basementPictureMoved) return;
+
+        const safeQuestion = CHARACTERS.butler?.safeQuestion;
+        if (!safeQuestion) return;
+
+        socket.emit("butlerSafeAnswer", safeQuestion);
+    });
+
+    // The TV builds the actual intro story text (it has the host's own
+    // clock, and the player list) and hands it to the server once, so
+    // every phone can show byte-identical text instead of each device
+    // trying to recompute it (and disagreeing on the time). Cached on
+    // the lobby so late joiners get it too via the normal lobby object.
+    socket.on("introStoryReady", ({ code, story }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+        if (socket.id !== lobby.hostSocketId) return;
+        if (typeof story !== "string" || !story.trim()) return;
+
+        lobby.introStory = story.slice(0, 4000);
+        io.to(code).emit("introStory", lobby.introStory);
+    });
+
     socket.on("openSafe", ({ code, playerToken }) => {
         const lobby = lobbies[code];
         if (!lobby) return;
@@ -984,9 +1169,7 @@ io.on("connection", (socket) => {
         }
 
         if (lobby.safeUnlocked) {
-            player.currentRoom = "safe-room";
             socket.emit("safeEntered");
-            sendLobbyUpdate(lobby);
             return;
         }
 
@@ -1020,7 +1203,6 @@ io.on("connection", (socket) => {
         }
 
         lobby.safeUnlocked = true;
-        player.currentRoom = "safe-room";
 
         socket.emit("safeCodeCorrect");
         socket.emit("safeEntered");
@@ -1092,7 +1274,7 @@ io.on("connection", (socket) => {
         }
 
         lobby.status = "intro";
-        io.to(code).emit("gameStarted", lobby);
+        io.to(code).emit("gameStarted", sanitizeLobbyForClient(lobby));
         sendLobbyUpdate(lobby);
     });
 
@@ -1103,7 +1285,8 @@ io.on("connection", (socket) => {
         if (lobby.status === "playing") return;
 
         lobby.status = "playing";
-        io.to(code).emit("mansionEntered", lobby);
+        lobby.gameStartedAt = Date.now();
+        io.to(code).emit("mansionEntered", sanitizeLobbyForClient(lobby));
         sendLobbyUpdate(lobby);
     });
 
@@ -1142,6 +1325,11 @@ io.on("connection", (socket) => {
             socket.id !== lobby.hostSocketId ||
             tvSessionId !== lobby.tvSessionId
         ) {
+            return;
+        }
+
+        if (isTooSoonToAccuse(lobby)) {
+            socket.emit("lobbyError", "It's too soon to accuse.");
             return;
         }
 
@@ -1297,6 +1485,7 @@ io.on("connection", (socket) => {
         }
     });
 });
+
 
 const PORT = process.env.PORT || 3000;
 
