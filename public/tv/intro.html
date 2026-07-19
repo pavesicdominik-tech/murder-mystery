@@ -35,8 +35,8 @@
 
         #textBox {
             width: min(900px, 88vw);
-            max-height: 84vh;
-            padding: clamp(18px, 3vw, 35px);
+            max-height: 92vh;
+            padding: clamp(16px, 3vw, 32px);
             box-sizing: border-box;
             background: rgba(0, 0, 0, 0.42);
             border: 1px solid rgba(242, 229, 196, 0.25);
@@ -47,29 +47,19 @@
             align-items: center;
         }
 
-        /* Only the story text scrolls, so the Enter button below it
-           stays reachable no matter how long the text runs (e.g. a
-           lobby with many players' names woven into the case). */
+        /* No max-height/scroll here on purpose — fitStoryText() in the
+           script below shrinks #storyText's font-size (within
+           STORY_MIN_FONT_PX/STORY_MAX_FONT_PX) until the full text
+           actually fits in the space available, so the whole story is
+           always visible without needing to scroll, regardless of how
+           long it ends up being (e.g. many players' names woven in). */
         #storyTextScroll {
             width: 100%;
-            max-height: 62vh;
-            overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(242, 229, 196, 0.4) transparent;
-        }
-
-        #storyTextScroll::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        #storyTextScroll::-webkit-scrollbar-thumb {
-            background: rgba(242, 229, 196, 0.35);
-            border-radius: 3px;
+            overflow: hidden;
         }
 
         #storyText {
             margin: 0;
-            font-size: clamp(18px, 2.6vw, 40px);
             line-height: 1.5;
             white-space: pre-wrap;
             text-shadow: 2px 2px 4px black;
@@ -297,6 +287,8 @@
                 });
             }
 
+            fitStoryTextToScreen(story);
+
             setTimeout(() => {
                 intro.style.opacity = "1";
             }, 150);
@@ -309,6 +301,42 @@
             introMusicElement.play().catch(() => {
                 // Sound is optional. Browsers may block audio until interaction.
             });
+        }
+
+        const STORY_MAX_FONT_PX = 40;
+        const STORY_MIN_FONT_PX = 15;
+
+        // Measures the FULL story text (not the partial text the
+        // typewriter has revealed so far) against the space actually
+        // available on screen, and picks the largest font size that
+        // fits without needing #storyTextScroll to scroll. Run once,
+        // before typing starts, so the box's size/font stays fixed for
+        // the entire typing animation rather than resizing mid-type.
+        function fitStoryTextToScreen(fullStory) {
+            const scrollEl = document.getElementById("storyTextScroll");
+
+            // Reserve room for the Enter button, textBox padding, and
+            // some breathing room, so the fitted text doesn't leave
+            // the button crammed against the last line.
+            const reservedPx = 170;
+            const maxHeightPx = Math.max(
+                window.innerHeight * 0.92 - reservedPx,
+                120
+            );
+
+            storyText.textContent = fullStory;
+
+            let fontSize = STORY_MAX_FONT_PX;
+            storyText.style.fontSize = fontSize + "px";
+
+            while (scrollEl.scrollHeight > maxHeightPx && fontSize > STORY_MIN_FONT_PX) {
+                fontSize -= 1;
+                storyText.style.fontSize = fontSize + "px";
+            }
+
+            // Clear it back out — typeNextLetter() below re-reveals the
+            // text one letter at a time at this now-fixed font size.
+            storyText.textContent = "";
         }
 
         function typeNextLetter() {

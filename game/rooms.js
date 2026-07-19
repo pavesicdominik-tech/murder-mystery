@@ -61,8 +61,9 @@ const ROOMS = {
     lobby: {
         id: "lobby",
         label: "Lobby",
+        labelHr: "Predvorje",
         image: "/images/rooms/lobby.jpg",
-        mapZone: { x: 39, y: 64 },
+        mapZone: { x: 53, y: 64 },
         doors: [
             { target: "dining", label: "Dining Room", left: "3%", top: "9%", width: "9%", height: "55%", invisible: true },
             { target: "powder-room", label: "Powder Room", left: "77%", top: "20%", width: "5%", height: "35%", invisible: true },
@@ -75,14 +76,15 @@ const ROOMS = {
     library: {
         id: "library",
         label: "Library",
+        labelHr: "Knjižnica",
         image: "/images/rooms/library.jpg",
-        mapZone: { x: 53, y: 22 },
+        mapZone: { x: 67, y: 22 },
         doors: [
             // Was "Lobby"; now leads to the Bedroom instead — the
             // library/lobby connection no longer exists in either
             // direction (see lobby.doors above, which no longer
             // targets library either).
-            { target: "bedroom", label: "Bedroom", left: "76%", top: "33%", width: "16%", height: "34%" },
+            { target: "bedroom", label: "Bedroom", left: "88%", top: "28%", width: "8%", height: "55%", invisible: true },
 
             // Only shown once the piano puzzle is solved (see `piano`
             // below). requiresFlag on a DOOR (unlike on a room) only
@@ -91,18 +93,18 @@ const ROOMS = {
             // destination room's own requiresFlag/requiresItem (attic's
             // flashlight requirement) still applies regardless of which
             // door was used to get there.
-            { target: "attic", label: "Hidden Passage", left: "42%", top: "22%", width: "18%", height: "48%", requiresFlag: "libraryPianoSolved" },
+            { target: "attic", label: "Hidden Passage", left: "43%", top: "31%", width: "15%", height: "39%", requiresFlag: "libraryPianoSolved", invisible: true },
 
-            { target: "hallway", label: "Hallway", left: "10%", top: "60%", width: "16%", height: "25%" }
+            { target: "hallway", label: "Hallway", left: "4%", top: "27%", width: "8%", height: "57%", invisible: true }
         ],
         itemHotspots: [
-            { placementId: "library-basement-key", label: "Take key", left: "64%", top: "58%" }
+            { placementId: "library-basement-key", label: "Take key", left: "51%", top: "73%", width: "3%", height: "4%", iconHotspot: true }
         ],
         characterHotspots: [
             // left/top/width/height position this character's roomSprite
             // image in this specific room. The same character could
             // appear in a different room with different coordinates.
-            { characterId: "butler", left: "30%", top: "22%", width: "12%", height: "55%" }
+            { characterId: "butler", left: "33%", top: "36%", width: "12%", height: "50%" }
         ],
 
         // Shown instead of `image` once libraryPianoSolved is true —
@@ -128,18 +130,18 @@ const ROOMS = {
     kitchen: {
         id: "kitchen",
         label: "Kitchen",
+        labelHr: "Kuhinja",
         image: "/images/rooms/kitchen.jpg",
-        mapZone: { x: 2, y: 49 },
+        mapZone: { x: 16, y: 49 },
         doors: [
-            { target: "dining", label: "Dining", left: "5%", top: "38%", width: "18%", height: "30%" },
-            { target: "backyard", label: "Backyard", left: "88%", top: "30%", width: "10%", height: "40%" }
+            { target: "dining", label: "Dining", left: "87%", top: "28%", width: "11%", height: "65%", invisible: true },
+            { target: "backyard", label: "Backyard", left: "16%", top: "28%", width: "5%", height: "29%", invisible: true }
         ],
         itemHotspots: [
-            { placementId: "kitchen-flashlight", label: "Take flashlight", left: "50%", top: "60%" },
-            { placementId: "kitchen-knife", label: "Take knife", left: "30%", top: "62%", width: "9%", height: "14%", iconHotspot: true }
+            { placementId: "kitchen-knife", label: "Take knife", left: "8%", top: "56%", width: "48%", height: "8%", iconHotspot: true }
         ],
         characterHotspots: [
-            { characterId: "cook", left: "62%", top: "20%", width: "14%", height: "55%" }
+            { characterId: "cook", left: "45%", top: "39%", width: "14%", height: "55%" }
         ],
 
         // Shown instead of `image` once the fireplace hotspot has been
@@ -154,39 +156,42 @@ const ROOMS = {
     dining: {
         id: "dining",
         label: "Dining Room",
+        labelHr: "Blagovaonica",
         image: "/images/rooms/dining.jpg",
-        mapZone: { x: 21, y: 53 },
+        mapZone: { x: 35, y: 53 },
         doors: [
-            { target: "kitchen", label: "Kitchen", left: "76%", top: "36%", width: "17%", height: "30%" },
-            { target: "lobby", label: "Lobby", left: "5%", top: "38%", width: "17%", height: "30%" }
+            { target: "kitchen", label: "Kitchen", left: "6%", top: "30%", width: "7%", height: "54%", invisible: true },
+            { target: "lobby", label: "Lobby", left: "87%", top: "30%", width: "7%", height: "54%", invisible: true }
         ]
     },
 
     bedroom: {
         id: "bedroom",
         label: "Bedroom",
+        labelHr: "Spavaća soba",
         image: "/images/rooms/bedroom.jpg",
-        mapZone: { x: 71, y: 22 },
+        mapZone: { x: 85, y: 22 },
         doors: [
             // Bedroom's only connection now — the hallway door has
             // been removed (Bedroom is reachable only via Library).
-            { target: "library", label: "Library", left: "8%", top: "35%", width: "18%", height: "32%" }
+            { target: "library", label: "Library", left: "6%", top: "28%", width: "5%", height: "43%", invisible: true }
         ],
         characterHotspots: [
-            { characterId: "maid", left: "25%", top: "22%", width: "13%", height: "55%" }
+            { characterId: "maid", left: "28%", top: "40%", width: "13%", height: "52%" }
         ]
     },
 
     hallway: {
         id: "hallway",
         label: "Hallway",
+        labelHr: "Hodnik",
         image: "/images/rooms/hallway.jpg",
         // Placeholder position — move this to match your mansion-map.png.
-        mapZone: { x: 56, y: 55 },
+        mapZone: { x: 70, y: 55 },
         doors: [
-            { target: "son-bedroom", label: "Son's Bedroom", left: "42%", top: "20%", width: "16%", height: "40%" },
-            { target: "library", label: "Library", left: "8%", top: "35%", width: "16%", height: "32%" },
-            { target: "lobby", label: "Lobby", left: "76%", top: "35%", width: "16%", height: "32%" }
+            { target: "son-bedroom", label: "Son's Bedroom", labelHr: "Sinova soba", left: "42%", top: "20%", width: "16%", height: "40%" },
+            { target: "library", label: "Library", labelHr: "Knjižnica", left: "8%", top: "35%", width: "16%", height: "32%" },
+            { target: "lobby", label: "Lobby", labelHr: "Predvorje", left: "76%", top: "35%", width: "16%", height: "32%" }
         ],
         characterHotspots: [
             { characterId: "son", left: "58%", top: "20%", width: "13%", height: "55%" }
@@ -196,15 +201,16 @@ const ROOMS = {
     "son-bedroom": {
         id: "son-bedroom",
         label: "Son's Bedroom",
+        labelHr: "Sinova soba",
         image: "/images/rooms/son-bedroom.jpg",
         // Placeholder position — move this to match your mansion-map.png.
-        mapZone: { x: 24, y: 21 },
+        mapZone: { x: 38, y: 21 },
         doors: [
-            { target: "hallway", label: "Hallway", left: "8%", top: "35%", width: "16%", height: "32%" }
+            { target: "hallway", label: "Hallway", left: "91%", top: "18%", width: "9%", height: "69%", invisible: true }
         ],
 
         itemHotspots: [
-            { placementId: "son-bedroom-wrinkled-note", label: "Take note", left: "70%", top: "55%", width: "8%", height: "12%", iconHotspot: true }
+            { placementId: "son-bedroom-wrinkled-note", label: "Take note", left: "46%", top: "76%", width: "8%", height: "12%", iconHotspot: true }
         ],
 
         // Bespoke — not a generic itemHotspot or characterHotspot, since
@@ -217,10 +223,10 @@ const ROOMS = {
         // player.
         catHotspot: {
             image: "/images/props/cat.png",
-            left: "55%",
-            top: "50%",
+            left: "15%",
+            top: "54%",
             width: "12%",
-            height: "20%",
+            height: "14%",
             maxClicks: 5,
             sound: "/sounds/meow.mp3",
             finalSound: "/sounds/hiss.mp3"
@@ -230,45 +236,48 @@ const ROOMS = {
     "powder-room": {
         id: "powder-room",
         label: "Powder Room",
+        labelHr: "Toaletna soba",
         image: "/images/rooms/powder-room.jpg",
         // Placeholder position — move this to match your mansion-map.png.
-        mapZone: { x: 60, y: 50 },
+        mapZone: { x: 74, y: 50 },
         doors: [
             // Was "Hallway"; now leads directly to the Lobby instead
             // (matches lobby.doors above, which now has a direct door
             // here too).
-            { target: "lobby", label: "Lobby", left: "8%", top: "35%", width: "16%", height: "32%" }
+            { target: "lobby", label: "Lobby", left: "90%", top: "18%", width: "12%", height: "78%", invisible: true }
         ],
         itemHotspots: [
             { placementId: "powder-room-glass-of-water", label: "Take glass of water", left: "62%", top: "60%", width: "9%", height: "14%", iconHotspot: true }
         ],
         characterHotspots: [
-            { characterId: "wife", left: "45%", top: "22%", width: "13%", height: "55%" }
+            { characterId: "wife", left: "49%", top: "27%", width: "13%", height: "74%" }
         ]
     },
 
     "basement-stairway": {
         id: "basement-stairway",
         label: "Stairway to the Basement",
+        labelHr: "Stubište za podrum",
         image: "/images/rooms/basement-stairway.jpg",
         // Placeholder position — move this to match your mansion-map.png.
-        mapZone: { x: 43, y: 72 },
+        mapZone: { x: 57, y: 72 },
         doors: [
             // Was "Back Upstairs" -> bedroom; now leads directly to the
             // Lobby instead (matches lobby.doors above).
-            { target: "lobby", label: "Lobby", left: "8%", top: "35%", width: "18%", height: "32%" }
+            { target: "lobby", label: "Lobby", left: "22%", top: "66%", width: "55%", height: "32%", invisible: true }
         ]
     },
 
     basement: {
         id: "basement",
         label: "Basement",
+        labelHr: "Podrum",
         image: "/images/rooms/basement.jpg",
         requiresFlag: "basementUnlocked",
         // Placeholder position — move this to match your mansion-map.png.
-        mapZone: { x: 62, y: 75 },
+        mapZone: { x: 76, y: 75 },
         doors: [
-            { target: "basement-stairway", label: "Leave Basement", left: "8%", top: "35%", width: "18%", height: "32%" }
+            { target: "basement-stairway", label: "Leave Basement", left: "3%", top: "10%", width: "21%", height: "74%", invisible: true }
         ],
 
         // Shown instead of `image` once the safe has been opened (see
@@ -284,6 +293,7 @@ const ROOMS = {
     attic: {
         id: "attic",
         label: "Attic",
+        labelHr: "Tavan",
         image: "/images/rooms/attic.jpg",
         // No image yet — will use the standard 1408x768 ratio once added.
         requiresItem: "flashlight",
@@ -297,23 +307,24 @@ const ROOMS = {
 
         dark: true,
         // Placeholder position — move this to match your mansion-map.png.
-        mapZone: { x: 72, y: 50 },
+        mapZone: { x: 86, y: 50 },
         doors: [
             // The only way back down — matches the library being the
             // only way up.
-            { target: "library", label: "Library", left: "8%", top: "50%", width: "18%", height: "32%" }
+            { target: "library", label: "Library", left: "56%", top: "79%", width: "15%", height: "9%", invisible: true }
         ],
         itemHotspots: [
             // iconHotspot: true renders this as the item's actual icon
             // image sitting in the room, rather than a plain dashed
             // text button — see renderItemHotspots() in phone/index.html.
-            { placementId: "attic-skull", label: "Take skull", left: "50%", top: "45%", width: "10%", height: "18%", iconHotspot: true }
+            { placementId: "attic-skull", label: "Take skull", left: "33%", top: "21%", width: "3%", height: "4%", iconHotspot: true, opacity: 0.5 }
         ]
     },
 
     backyard: {
         id: "backyard",
         label: "Backyard",
+        labelHr: "Dvorište",
         image: "/images/rooms/backyard.jpg",
         // No image yet — will use the standard 1408x768 ratio once added.
 
@@ -323,7 +334,7 @@ const ROOMS = {
         hiddenUntilVisited: true,
 
         // Placeholder position — move this to match your mansion-map.png.
-        mapZone: { x: 2, y: 17 },
+        mapZone: { x: 16, y: 17 },
         doors: [
             { target: "kitchen", label: "Kitchen", left: "8%", top: "35%", width: "18%", height: "32%" }
         ],
@@ -355,6 +366,7 @@ function getClientRooms() {
         clientRooms[id] = {
             id: room.id,
             label: room.label,
+            labelHr: room.labelHr || null,
             image: room.image,
             imageAspectRatio: room.imageAspectRatio || DEFAULT_ASPECT_RATIO,
             mapZone: room.mapZone || null,

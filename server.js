@@ -13,7 +13,39 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static("public"));
+// While this game is under active development, HTML/JS files should
+// always be re-fetched fresh — otherwise updates on the server can
+// look like they "didn't take" on a device that already visited
+// before. Images and sounds are left to cache normally: those rarely
+// change once added, and re-downloading a multi-MB room background or
+// sound effect on every single visit (rather than once per browser)
+// would actually be the thing that makes the game feel slow,
+// especially over phone data.
+app.use(express.static("public", {
+    // 1 day for anything else (images, sounds, fonts) — long enough
+    // that a player walking back into a room they've already visited
+    // doesn't even need to ask the server "has this changed?", short
+    // enough that swapping out an image/sound file mid-development
+    // won't stay stuck for players for more than a day.
+    maxAge: 24 * 60 * 60 * 1000,
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html") || filePath.endsWith(".js")) {
+            // Deliberately "no-cache" and NOT "no-store": the browser
+            // is still allowed to keep its own copy, but must always
+            // ask the server first ("has this changed since I last
+            // saw it?") before using it. If nothing changed, the
+            // server replies with a tiny 304 and the browser reuses
+            // what it already has — so this doesn't cost a full
+            // re-download every time. This check only happens once
+            // per player, when the page first loads (this game is a
+            // single-page app — moving between rooms never re-fetches
+            // the HTML), so in practice it means "the newest version,
+            // fetched once per session" rather than "constantly
+            // re-downloading during play".
+            res.setHeader("Cache-Control", "no-cache, must-revalidate");
+        }
+    }
+}));
 
 app.get("/api/game-data", (req, res) => {
     res.json({
@@ -52,6 +84,23 @@ const ACCUSATION_COOLDOWN_MS = 60 * 1000;
 
 function isTooSoonToAccuse(lobby) {
     return !lobby.gameStartedAt || (Date.now() - lobby.gameStartedAt) < ACCUSATION_UNLOCK_DELAY_MS;
+}
+
+// Used only for the handful of character fields that are deliberately
+// kept OUT of getClientCharacters() (knifeQuestion, safeQuestion,
+// dismissiveLine, hintIntroLine, revealedQuestions, badEndingText,
+// goodEndingText) — these are hand-delivered by the server at the
+// exact moment they're unlocked, rather than sent to every client
+// up front, to prevent reading spoilers via devtools/network tab.
+// Everything else (name, introLine, the standard questions array) is
+// already public and translated entirely client-side instead — see
+// applyLanguage() in phone/index.html.
+function pickLang(obj, field, language) {
+    if (!obj) return obj;
+    if (language === "hr" && obj[field + "Hr"] !== undefined) {
+        return obj[field + "Hr"];
+    }
+    return obj[field];
 }
 
 function closeLobby(code, reason = "Lobby closed") {
@@ -229,6 +278,8 @@ function checkAccusationComplete(lobby) {
     // resolved, so there's no "spoiler" concern in exposing it here,
     // unlike isMurderer/goodEndingText/badEndingText living in
     // game/characters.js, which stay hidden until this exact moment.
+    // Always stored in English — see the per-player loop below for
+    // where a Croatian player actually gets translated text.
     lobby.endingStoryText = isCorrect
         ? accusedCharacter?.goodEndingText
         : accusedCharacter?.badEndingText;
@@ -237,11 +288,36 @@ function checkAccusationComplete(lobby) {
         ? accusedCharacter?.goodEndingImage
         : accusedCharacter?.badEndingImage;
 
-    io.to(lobby.code).emit("accusationResult", {
+    // The ending narrative is exactly the kind of spoiler content kept
+    // out of getClientCharacters() all game — so unlike most lobby
+    // broadcasts, this one can't be a single io.to(code).emit() with
+    // one shared payload. Each connected player gets their own
+    // dedicated emit, personalized to their stored language; the TV
+    // (which never sets a player language) always gets English.
+    const englishPayload = {
         result: lobby.endingResult,
         characterName: accusedCharacter?.name || accusedId,
         storyText: lobby.endingStoryText,
         backgroundImage: lobby.endingBackgroundImage
+    };
+
+    io.to(lobby.hostSocketId).emit("accusationResult", englishPayload);
+
+    lobby.players.forEach(p => {
+        if (!p.connected || !p.socketId) return;
+
+        const payload = p.language === "hr"
+            ? {
+                result: lobby.endingResult,
+                characterName: pickLang(accusedCharacter, "name", "hr") || englishPayload.characterName,
+                storyText: isCorrect
+                    ? (accusedCharacter?.goodEndingTextHr || englishPayload.storyText)
+                    : (accusedCharacter?.badEndingTextHr || englishPayload.storyText),
+                backgroundImage: lobby.endingBackgroundImage
+            }
+            : englishPayload;
+
+        io.to(p.socketId).emit("accusationResult", payload);
     });
 
     sendLobbyUpdate(lobby);
@@ -322,8 +398,57 @@ function transferInventoryFromPlayer(lobby, playerToken) {
     sendPrivateInventoryToPlayer(recipient);
 }
 
+// A socket gets muted (its events silently dropped) if it sends more
+// than this many messages within the window — a generous ceiling for
+// legitimate rapid clicking, but enough to stop one spamming
+// connection from flooding the server or everyone else's TV/phone
+// notifications. See the socket.on wrapper below.
+const SOCKET_RATE_LIMIT_MAX_EVENTS = 20;
+const SOCKET_RATE_LIMIT_WINDOW_MS = 1000;
+
 io.on("connection", (socket) => {
     console.log("Connected:", socket.id);
+
+    // Every socket gets its own counter (like each player having their
+    // own walkie-talkie) — one noisy connection can't use up another
+    // player's allowance. Wrapping socket.on here, before any handlers
+    // are registered below, means every socket.on("eventName", ...)
+    // call in this file is automatically covered without having to
+    // edit each one individually.
+    socket.data.rateLimitWindowStart = Date.now();
+    socket.data.rateLimitCount = 0;
+
+    const registerSocketHandler = socket.on.bind(socket);
+    socket.on = (eventName, handler) => {
+        // "disconnect" is Socket.io's own lifecycle event, not
+        // attacker-controllable input — always let cleanup logic run,
+        // even for a socket that's currently muted.
+        if (eventName === "disconnect") {
+            return registerSocketHandler(eventName, handler);
+        }
+
+        return registerSocketHandler(eventName, (...args) => {
+            const now = Date.now();
+
+            if (now - socket.data.rateLimitWindowStart >= SOCKET_RATE_LIMIT_WINDOW_MS) {
+                socket.data.rateLimitWindowStart = now;
+                socket.data.rateLimitCount = 0;
+            }
+
+            socket.data.rateLimitCount += 1;
+
+            if (socket.data.rateLimitCount > SOCKET_RATE_LIMIT_MAX_EVENTS) {
+                // Over the limit for this second — quietly drop the
+                // event. No error sent back, since a flooding
+                // connection doesn't deserve more traffic in response,
+                // and a legitimate player who briefly double-clicks
+                // something shouldn't see a scary error message.
+                return;
+            }
+
+            handler(...args);
+        });
+    };
 
     socket.on("join", ({ type, tvSessionId }) => {
         socket.data.type = type;
@@ -431,7 +556,7 @@ io.on("connection", (socket) => {
         }, MAX_LOBBY_LIFETIME_MS);
     });
 
-    socket.on("joinLobby", ({ code, name, playerToken }) => {
+    socket.on("joinLobby", ({ code, name, playerToken, language }) => {
         const lobby = lobbies[code];
 
         if (!lobby) {
@@ -441,6 +566,9 @@ io.on("connection", (socket) => {
 
         const token = playerToken || crypto.randomUUID();
         const cleanName = (name || "Player").trim().slice(0, 10) || "Player";
+        // Only "hr" is ever treated as non-English — anything else
+        // (missing, unrecognized) safely defaults to English.
+        const cleanLanguage = language === "hr" ? "hr" : "en";
 
         let player = lobby.players.find(p => p.token === token);
 
@@ -453,6 +581,7 @@ io.on("connection", (socket) => {
             player = {
                 token,
                 name: cleanName,
+                language: cleanLanguage,
                 connected: true,
                 socketId: socket.id,
                 currentRoom: "lobby",
@@ -467,6 +596,7 @@ io.on("connection", (socket) => {
             lobby.players.push(player);
         } else {
             player.name = cleanName;
+            player.language = cleanLanguage;
             player.connected = true;
             player.socketId = socket.id;
 
@@ -657,6 +787,7 @@ io.on("connection", (socket) => {
         if (receiver.socketId) {
             io.to(receiver.socketId).emit("itemReceived", {
                 fromName: giver.name,
+                itemId: item.id,
                 itemName: item.name,
                 sound: DEFAULT_PICKUP_SOUND
             });
@@ -707,7 +838,7 @@ io.on("connection", (socket) => {
     //     taken (consumed — gone from their inventory for good), they
     //     become the recorded giver, and they immediately get the
     //     unlocked intro + questions.
-    socket.on("interactWithMysteriousPerson", ({ code, playerToken }) => {
+    socket.on("interactWithMysteriousPerson", ({ code, playerToken, language }) => {
         const lobby = lobbies[code];
         if (!lobby) return;
 
@@ -719,18 +850,22 @@ io.on("connection", (socket) => {
         const character = CHARACTERS["mysterious-person"];
         if (!character) return;
 
+        const revealedQuestions = language === "hr"
+            ? (character.revealedQuestionsHr || character.revealedQuestions || [])
+            : (character.revealedQuestions || []);
+
         if (lobby.skullGivenBy === playerToken) {
             socket.emit("mysteriousPersonDialogue", {
-                line: character.hintIntroLine,
+                line: pickLang(character, "hintIntroLine", language),
                 gaveSkull: false,
-                questions: character.revealedQuestions || []
+                questions: revealedQuestions
             });
             return;
         }
 
         if (lobby.skullGivenBy) {
             socket.emit("mysteriousPersonDialogue", {
-                line: character.dismissiveLine,
+                line: pickLang(character, "dismissiveLine", language),
                 gaveSkull: false,
                 questions: null
             });
@@ -742,7 +877,7 @@ io.on("connection", (socket) => {
 
         if (skullIndex === -1) {
             socket.emit("mysteriousPersonDialogue", {
-                line: character.introLine,
+                line: pickLang(character, "introLine", language),
                 gaveSkull: false,
                 questions: null
             });
@@ -753,10 +888,10 @@ io.on("connection", (socket) => {
         lobby.skullGivenBy = playerToken;
 
         socket.emit("mysteriousPersonDialogue", {
-            line: character.hintIntroLine,
+            line: pickLang(character, "hintIntroLine", language),
             gaveSkull: true,
             skullIcon: skullItem.icon,
-            questions: character.revealedQuestions || []
+            questions: revealedQuestions
         });
 
         socket.emit("itemRemoved", { sound: DEFAULT_PICKUP_SOUND });
@@ -881,7 +1016,6 @@ io.on("connection", (socket) => {
         lobby.basementUnlocked = true;
 
         socket.emit("basementUnlocked");
-        socket.emit("itemRemoved", { sound: DEFAULT_PICKUP_SOUND });
         sendTvNotification(lobby, `${player.name} has unlocked the basement door.`);
         sendPrivatePlayerUpdate(socket, lobby, playerToken);
         sendLobbyUpdate(lobby);
@@ -1044,11 +1178,19 @@ io.on("connection", (socket) => {
                 return;
             }
 
-            player.inventory.splice(waterIndex, 1);
+            const [waterItem] = player.inventory.splice(waterIndex, 1);
             lobby.kitchenFireExtinguished = true;
 
             socket.emit("gameMessage", "You've extinguished the fire.");
-            socket.emit("itemRemoved", { sound: DEFAULT_PICKUP_SOUND });
+
+            // Dedicated event (rather than the generic "itemRemoved")
+            // so the client can play water.mp3 specifically and
+            // animate the glass of water flying from the inventory to
+            // the fireplace hotspot — see socket.on("waterUsedOnFire")
+            // in phone/index.html.
+            socket.emit("waterUsedOnFire", {
+                icon: waterItem.icon
+            });
 
             sendTvNotification(lobby, `${player.name} extinguished the fire in the Kitchen.`);
             sendPrivatePlayerUpdate(socket, lobby, playerToken);
@@ -1095,7 +1237,7 @@ io.on("connection", (socket) => {
     // getClientCharacters() never sends to the browser, so it can only
     // ever be learned through this round trip, not by reading page
     // data in dev tools.
-    socket.on("askCookAboutKnife", ({ code, playerToken }) => {
+    socket.on("askCookAboutKnife", ({ code, playerToken, language }) => {
         const lobby = lobbies[code];
         if (!lobby) return;
 
@@ -1110,14 +1252,19 @@ io.on("connection", (socket) => {
         const knifeQuestion = CHARACTERS.cook?.knifeQuestion;
         if (!knifeQuestion) return;
 
-        socket.emit("cookKnifeAnswer", knifeQuestion);
+        const knifeQuestionHr = CHARACTERS.cook?.knifeQuestionHr;
+
+        socket.emit(
+            "cookKnifeAnswer",
+            language === "hr" && knifeQuestionHr ? knifeQuestionHr : knifeQuestion
+        );
     });
 
     // Unlike the Cook's knife question (gated on the asking player's
     // own inventory), this is gated on lobby-wide state: any player can
     // ask it, as soon as anyone has moved the basement picture aside
     // and revealed the safe.
-    socket.on("askButlerAboutSafe", ({ code, playerToken }) => {
+    socket.on("askButlerAboutSafe", ({ code, playerToken, language }) => {
         const lobby = lobbies[code];
         if (!lobby) return;
 
@@ -1129,7 +1276,12 @@ io.on("connection", (socket) => {
         const safeQuestion = CHARACTERS.butler?.safeQuestion;
         if (!safeQuestion) return;
 
-        socket.emit("butlerSafeAnswer", safeQuestion);
+        const safeQuestionHr = CHARACTERS.butler?.safeQuestionHr;
+
+        socket.emit(
+            "butlerSafeAnswer",
+            language === "hr" && safeQuestionHr ? safeQuestionHr : safeQuestion
+        );
     });
 
     // The TV builds the actual intro story text (it has the host's own
@@ -1486,9 +1638,6 @@ io.on("connection", (socket) => {
     });
 });
 
-
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+server.listen(3000, () => {
+    console.log("Server running on http://localhost:3000");
 });

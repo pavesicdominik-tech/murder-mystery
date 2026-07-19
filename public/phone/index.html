@@ -48,11 +48,91 @@
             touch-action: manipulation;
         }
 
+        #joinScreen {
+            display: flex;
+            min-height: 100vh;
+            min-height: 100dvh;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+            background-image:
+                linear-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.78)),
+                url("/images/ph-bg.jpg");
+            background-size: cover;
+            background-position: center;
+        }
+
+        .gameTitle {
+            margin: 0;
+            font-family: Georgia, "Times New Roman", serif;
+            /* clamp() ties this to the viewport width, so it scales
+               down on a narrow phone instead of the browser's default
+               h1 size (which is tuned for desktop and reads far too
+               small/cramped on a phone screen). */
+            font-size: clamp(30px, 11vw, 54px);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            text-shadow: 0 4px 16px black;
+        }
+
+        .gameSubtitle {
+            margin: 8px 0 22px;
+            font-size: clamp(12px, 3.6vw, 16px);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            opacity: 0.9;
+        }
+
         .box {
             width: min(420px, 100%);
             margin: 0 auto;
             padding: 25px;
             text-align: center;
+        }
+
+        #languagePicker {
+            margin-top: 22px;
+            padding-top: 18px;
+            border-top: 1px solid rgba(242, 229, 196, 0.25);
+        }
+
+        #languageLabel {
+            margin-bottom: 10px;
+            font-size: 13px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #d6b57b;
+        }
+
+        #languageButtons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .languageButton {
+            flex: 1;
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            border: 1px solid #b58c5a;
+            border-radius: 6px;
+            background: #251616;
+            color: #f2e5c4;
+            font-size: 15px;
+        }
+
+        .languageButton.active {
+            background: #3a1c1c;
+            border-color: #f0c65d;
+            box-shadow: 0 0 0 1px #f0c65d inset;
+        }
+
+        .languageFlag {
+            font-size: 18px;
         }
 
         input,
@@ -113,8 +193,8 @@
 
         #phoneIntroBox {
             width: min(100%, 560px);
-            max-height: 92vh;
-            max-height: 92dvh;
+            max-height: 94vh;
+            max-height: 94dvh;
             padding: 16px;
             background: rgba(0, 0, 0, 0.48);
             border: 1px solid rgba(242, 229, 196, 0.25);
@@ -124,20 +204,19 @@
             align-items: center;
         }
 
-        /* Only the story text scrolls, so the Enter button below it
-           stays reachable even on a small phone screen with a long
-           story (e.g. several players' names woven into the text). */
+        /* No max-height/scroll here on purpose — fitPhoneStoryText()
+           in the script below shrinks #phoneStoryText's font-size
+           (within PHONE_STORY_MIN/MAX_FONT_PX) until the full story
+           actually fits in the space available, so it's always fully
+           visible without needing to scroll, regardless of how long
+           it ends up being (e.g. many players' names woven in). */
         #phoneStoryTextScroll {
             width: 100%;
-            max-height: 68vh;
-            max-height: 68dvh;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
+            overflow: hidden;
         }
 
         #phoneStoryText {
             margin: 0;
-            font-size: clamp(19px, 5.2vw, 27px);
             line-height: 1.45;
             white-space: pre-wrap;
             text-shadow: 2px 2px 4px black;
@@ -191,7 +270,7 @@
             flex: 1;
             min-width: 0;
             height: clamp(38px, 6.5vh, 52px);
-            min-height: 0;
+            min-height: 47px;
             font-size: clamp(15px, 2.4vh, 20px);
         }
 
@@ -326,8 +405,12 @@
         /* Fully clickable, but no visible border/background/text — for
            hotspots meant to blend invisibly into the room art (e.g. a
            body outline on the floor) rather than announce themselves
-           with the usual dashed-border look. */
-        .invisibleHotspot {
+           with the usual dashed-border look. Also overrides
+           .hotspot:hover/.doorHotspot's own background tint, so
+           hovering a mouse over one of these doesn't reveal it either
+           — it stays exactly as invisible on hover as it is at rest. */
+        .invisibleHotspot,
+        .invisibleHotspot:hover {
             border: none;
             background: none;
             color: transparent;
@@ -345,6 +428,10 @@
             background: none;
             object-fit: contain;
             filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
+        }
+
+        .itemIconHotspot:hover {
+            background: none;
         }
 
         #basementPictureHotspot {
@@ -384,17 +471,18 @@
         #safeHotspot {
             display: none;
             position: absolute;
-            left: 49%;
-    top: 48%;
-    width: 8%;
-    height: 30%;
+            left: 42%;
+            top: 34%;
+            width: 7%;
+            height: 14%;
             z-index: 7;
-            border: 2px dashed #304f35;
-    background: rgb(0 0 0 / 24%);
+            border: none;
+            background: none;
+            color: transparent;
         }
 
         #safeHotspot:hover {
-            background: rgba(45, 110, 55, 0.42);
+            background: none;
         }
 
         .pickup-fly {
@@ -455,6 +543,28 @@
                 opacity: 0;
                 transform: translate(-50%, -50%) scale(0.35);
             }
+        }
+
+        /* Used when an inventory item is "used" on a room hotspot
+           (e.g. the glass of water on the kitchen fire) rather than
+           picked up or given away. Unlike .pickup-fly (which lives
+           inside #roomCanvas and uses room-relative % coordinates),
+           this needs position: fixed with real pixel coordinates set
+           by JS — it has to bridge between the inventory bar (a fixed
+           screen element) and a hotspot that may be scrolled to any
+           position within the room image. See animateItemUseOnHotspot()
+           below, which sets the starting/ending left/top itself; the
+           only thing fixed here is the transition and fade/scale. */
+        .item-use-fly {
+            position: fixed;
+            z-index: 1600;
+            width: 54px;
+            height: 54px;
+            object-fit: contain;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            transition: left 700ms ease-in, top 700ms ease-in, opacity 700ms ease-in, transform 700ms ease-in;
+            opacity: 1;
         }
 
         #currentRoom {
@@ -825,6 +935,13 @@
             50% {
                 transform: translateY(-4px);
             }
+        }
+
+        /* The cat easter-egg hotspot shares .characterHotspot's plain
+           borderless image styling, but shouldn't "breathe" like a
+           real character — it's a static prop, not a living NPC. */
+        .catHotspotIcon {
+            animation: none;
         }
 
         #characterPopupOverlay {
@@ -1280,16 +1397,41 @@
 </head>
 
 <body>
-    <div class="box" id="joinScreen">
-        <h1>Join Game</h1>
-        <input id="codeInput" placeholder="Lobby code">
-        <input id="nameInput" maxlength="10" placeholder="Your name (max 10 characters)">
-        <button onclick="joinGame()">Join Lobby</button>
-        <div id="status"></div>
+    <div id="joinScreen">
+        <div class="box">
+            <h1 class="gameTitle" id="joinTitle">Murder Mystery</h1>
+            <div class="gameSubtitle" id="joinSubtitle">Couch game for friends and family.</div>
+
+            <h2 id="joinHeader">Join Game</h2>
+            <input id="codeInput" placeholder="Lobby code">
+            <input id="nameInput" maxlength="10" placeholder="Your name (max 10 characters)">
+            <button id="joinButton" onclick="joinGame()">Join Lobby</button>
+            <div id="status"></div>
+
+            <!--
+                Per-device language choice — stored in this browser's
+                localStorage only, so it's entirely local to whichever
+                phone picks it. The TV and the server's canonical data
+                always stay in English; only this specific device's
+                display swaps to Croatian. See applyLanguage() and
+                setLanguage() below.
+            -->
+            <div id="languagePicker">
+                <div id="languageLabel">Choose language / Odaberi jezik</div>
+                <div id="languageButtons">
+                    <button type="button" class="languageButton" id="languageButtonEn" onclick="setLanguage('en')">
+                        <span class="languageFlag">🇬🇧</span> English
+                    </button>
+                    <button type="button" class="languageButton" id="languageButtonHr" onclick="setLanguage('hr')">
+                        <span class="languageFlag">🇭🇷</span> Hrvatski
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="box" id="waitingScreen">
-        <h1>Joined</h1>
+        <h1 id="waitingHeader">Joined</h1>
         <p id="waitingText">Waiting for the host to start the game.</p>
     </div>
 
@@ -1338,9 +1480,9 @@
 
                     <button
                         id="basementDoorHotspot"
-                        class="hotspot"
+                        class="hotspot invisibleHotspot"
                         onclick="useBasementDoor()"
-                        style="display: none; left: 42%; top: 28%; width: 24%; height: 55%;"
+                        style="display: none; left: 45%; top: 34%; width: 11%; height: 30%;"
                     >
                         Basement Door
                     </button>
@@ -1375,9 +1517,9 @@
 
                     <button
                         id="pianoHotspot"
-                        class="hotspot"
+                        class="hotspot invisibleHotspot"
                         onclick="openPianoGame()"
-                        style="display: none; left: 8%; top: 30%; width: 16%; height: 40%;"
+                        style="display: none; left: 16%; top: 56%; width: 15%; height: 21%;"
                     >
                         Piano
                     </button>
@@ -1393,9 +1535,9 @@
                     -->
                     <button
                         id="fireHotspot"
-                        class="hotspot"
+                        class="hotspot invisibleHotspot"
                         onclick="clickFireHotspot()"
-                        style="display: none; left: 60%; top: 42%; width: 16%; height: 34%;"
+                        style="display: none; left: 70%; top: 72%; width: 7%; height: 15%;"
                     >
                         Fireplace
                     </button>
@@ -1407,7 +1549,7 @@
                     -->
                     <button
                         id="diningLookHotspot"
-                        class="hotspot"
+                        class="hotspot invisibleHotspot"
                         onclick="openDiningLookPopup()"
                         style="display: none; left: 42%; top: 78%; width: 16%; height: 16%;"
                     >
@@ -1464,6 +1606,7 @@
 
                 <button
                     type="button"
+                    id="itemActionInspectButton"
                     class="itemActionButton"
                     onclick="inspectFromActionSheet()"
                 >Inspect</button>
@@ -1510,23 +1653,29 @@
         <!--
             Shown once the safe is open (see socket.on("safeEntered")
             below). Opening the safe no longer moves the player to a
-            separate room — this just pops up over the basement, with
-            a couple of item hotspots inside. Tapping the dark backdrop
-            (outside the safe image) closes it; tapping an item inside
-            does not. "Safe Item 1"/"Safe Item 2" are placeholders —
-            swap inspectSafeItem()'s messages and icons for real items
-            once you've decided what's inside.
+            separate room — this just pops up over the basement. The
+            Flashlight lives here (rather than a room itemHotspot) —
+            same pickupItem() mechanics as any other item, just
+            triggered from this popup instead of the room canvas.
+            Whoever picks it up can enter the Attic (see requiresItem
+            on the attic room in game/rooms.js) — that rule doesn't
+            care where the flashlight was picked up from. The button
+            itself is invisible (no border/background/text) — only the
+            flashlight icon shows, and updateSafeFlashlightVisibility()
+            hides it entirely once someone's already taken it.
         -->
         <div id="safePopupOverlay" onclick="closeSafePopup()">
             <div id="safePopupBox" onclick="event.stopPropagation()">
                 <img id="safePopupImage" src="/images/rooms/emptysafe.png" alt="The open safe">
 
-                <button type="button" class="safeItemHotspot" style="left: 30%; top: 38%;" onclick="inspectSafeItem(1)">
-                    <img src="/images/items/basement-key.png" alt="Safe Item 1">
-                </button>
-
-                <button type="button" class="safeItemHotspot" style="left: 62%; top: 45%;" onclick="inspectSafeItem(2)">
-                    <img src="/images/items/skull.png" alt="Safe Item 2">
+                <button
+                    type="button"
+                    id="safeFlashlightHotspot"
+                    class="safeItemHotspot invisibleHotspot"
+                    style="left: 30%; top: 38%;"
+                    onclick="pickupSafeFlashlight()"
+                >
+                    <img src="/images/items/flashlight.png" alt="Flashlight">
                 </button>
             </div>
         </div>
@@ -1680,13 +1829,13 @@
          5th) — see clickCatHotspot()/catHotspotSound below. -->
     <audio id="catSoundElement" preload="auto"></audio>
 
-    <!-- Played whenever an item leaves this player's inventory for a
-         reason other than picking a fresh one up from a room (given to
-         another player, or consumed by a puzzle) — see the itemRemoved
-         and itemReceived handlers below. -->
-    <audio id="itemRemovedSoundElement" preload="auto">
-        <source src="/sounds/pickupitemsound.mp3" type="audio/mpeg">
-    </audio>
+    <!-- A general-purpose, one-shot sound-effect player. Its src is
+         set dynamically right before playing (see playSfx() below) —
+         used for specific item-use sounds like the water glass on the
+         kitchen fire, or the basement key on the locked door. There is
+         no longer a sound that plays automatically just because an
+         item left the inventory; only specific actions trigger one. -->
+    <audio id="sfxElement" preload="auto"></audio>
 
     <script src="/socket.io/socket.io.js"></script>
 
@@ -1714,6 +1863,181 @@
         let gameMessageTimer;
         let keypadCode = "";
         let keypadLocked = false;
+
+        // ============================================================
+        // TRANSLATION (i18n)
+        // ============================================================
+        // Per-device only — stored in this browser's localStorage, so
+        // choosing Croatian on one phone never affects any other
+        // phone, or the TV (which never reads this at all and always
+        // shows English). The server and game data files stay entirely
+        // in English; this phone just decides which field to *display*
+        // for content it already has (room labels, item names, the
+        // three character questions everyone gets, etc.) via the
+        // `xHr`-suffixed fields already included in the same payload.
+        //
+        // A few pieces of dialogue are deliberately kept OFF the wire
+        // in general (the Cook's knife answer, the Butler's safe
+        // answer, the Mysterious Person's hidden lines, and both ending
+        // texts) to stop spoilers being read via devtools before
+        // they're unlocked — see game/characters.js. For those, this
+        // phone instead tells the server which language it wants
+        // (`language: currentLanguage`) at the moment it asks, and the
+        // server sends back already-translated text. There's nothing
+        // to translate client-side for those specific events; just
+        // display what arrives.
+        let currentLanguage = localStorage.getItem("gameLanguage") === "hr" ? "hr" : "en";
+
+        // Fixed UI chrome text that isn't part of the room/item/
+        // character payload — join screen, buttons, headers, a few
+        // hardcoded flavor popups, and known system message strings
+        // the server sends as plain English text.
+        const UI_HR = {
+            gameTitle: "Ubojstvo Misterija",
+            gameSubtitle: "Kauč igra za obitelj i prijatelje.",
+            joinHeader: "Pridruži se igri",
+            codePlaceholder: "Kod sobe",
+            namePlaceholder: "Tvoje ime (najviše 10 znakova)",
+            joinButton: "Pridruži se",
+            waitingHeader: "Pridružen/a",
+            waitingDefault: "Čekanje da domaćin pokrene igru.",
+            enterMansion: "Uđi u dvorac",
+            chooseRoomLabel: "Odaberi sobu",
+            youAreIn: "Nalaziš se u:",
+            inventoryTitle: "Inventar",
+            inspectButton: "Pregledaj",
+            giveToLabel: "Daj igraču:",
+            makeAccusationHeader: "Optuži nekoga",
+            cancelButton: "Odustani",
+            accuseButton: "Optuži",
+            noSuspects: "Još nema osumnjičenih",
+            diningLookDescription: "Čini se da je jedva dirao hranu.",
+            bodyOutlineDescription: "Tijelo je pronađeno ovdje na podu predvorja. Čini se da je žrtva pala niz stepenice.",
+            enterCode: "Unesi kod",
+            wrongCode: "Pogrešan kod",
+            askCookKnifeButton: "Zašto je ovaj nož krvav?",
+            askButlerSafeButton: "Što znate o sefu?"
+        };
+
+        // Known plain-English system/status messages the SERVER sends
+        // verbatim (gameMessage/lobbyError-type events). These aren't
+        // secret or per-character, just generic flavor/status text, so
+        // a simple exact-string lookup table is enough — no need to
+        // restructure every server.js message call site for this.
+        const MESSAGE_HR = {
+            "Enter a lobby code.": "Unesi kod sobe.",
+            "Lobby not found.": "Soba nije pronađena.",
+            "Lobby is full.": "Soba je puna.",
+            "You cannot start an accusation.": "Ne možeš pokrenuti optužbu.",
+            "It's too soon to accuse.": "Prerano je za optužbu.",
+            "Wait till you can accuse again.": "Pričekaj dok ponovno možeš optužiti.",
+            "You need to be in the Lobby to make an accusation.": "Moraš biti u predvorju da bi nekoga optužio/la.",
+            "A vote is already underway.": "Glasanje je već u tijeku.",
+            "No one has any reason to suspect them yet.": "Još nitko nema razloga sumnjati na tu osobu.",
+            "You cannot move that.": "Ne možeš to pomaknuti.",
+            "There's something in the fire but I can't reach it.": "Nešto je u vatri, ali ne mogu to dohvatiti.",
+            "You've extinguished the fire.": "Ugasio/la si vatru.",
+            "The key turns. The basement doors slowly open.": "Ključ se okreće. Vrata podruma se polako otvaraju.",
+            "You enter the basement.": "Ulaziš u podrum.",
+            "The safe door opens.": "Vrata sefa se otvaraju.",
+            "Room is too dark to enter.": "Soba je premračna za ulazak.",
+            "At least one player must join before starting.": "Barem jedan igrač mora pristupiti prije početka.",
+            "Group hasn't decided who the suspect is.": "Grupa se nije odlučila tko je osumnjičen/a."
+        };
+
+        // Returns the Croatian text for a known fixed English message,
+        // or the original text unchanged if there's no translation for
+        // it (or English is selected) — so an untranslated message
+        // never just disappears, it simply stays in English.
+        function trMsg(text) {
+            if (currentLanguage !== "hr") return text;
+            return MESSAGE_HR[text] || text;
+        }
+
+        function tUI(key) {
+            if (currentLanguage === "hr" && UI_HR[key]) return UI_HR[key];
+            return null;
+        }
+
+        function trRoomLabel(room) {
+            if (!room) return "";
+            return (currentLanguage === "hr" && room.labelHr) ? room.labelHr : room.label;
+        }
+
+        function trItemName(item) {
+            if (!item) return "";
+            return (currentLanguage === "hr" && item.nameHr) ? item.nameHr : item.name;
+        }
+
+        function trItemDescription(item) {
+            if (!item) return "";
+            return (currentLanguage === "hr" && item.descriptionHr) ? item.descriptionHr : (item.description || "");
+        }
+
+        function trCharacterName(character) {
+            if (!character) return "";
+            return (currentLanguage === "hr" && character.nameHr) ? character.nameHr : character.name;
+        }
+
+        function trCharacterIntro(character) {
+            if (!character) return "";
+            return (currentLanguage === "hr" && character.introLineHr) ? character.introLineHr : character.introLine;
+        }
+
+        function trCharacterQuestions(character) {
+            if (!character) return [];
+            return (currentLanguage === "hr" && character.questionsHr) ? character.questionsHr : (character.questions || []);
+        }
+
+        // Applied once on page load and again whenever the language
+        // toggle is used — updates every piece of fixed chrome text
+        // that isn't re-rendered from scratch elsewhere (room/item/
+        // character content re-renders naturally the next time its
+        // own render function runs, since those all check
+        // currentLanguage live).
+        function applyLanguage() {
+            document.getElementById("languageButtonEn").classList.toggle("active", currentLanguage === "en");
+            document.getElementById("languageButtonHr").classList.toggle("active", currentLanguage === "hr");
+
+            document.getElementById("joinTitle").textContent = tUI("gameTitle") || "Murder Mystery";
+            document.getElementById("joinSubtitle").textContent = tUI("gameSubtitle") || "Couch game for friends and family.";
+            document.getElementById("joinHeader").textContent = tUI("joinHeader") || "Join Game";
+            document.getElementById("codeInput").placeholder = tUI("codePlaceholder") || "Lobby code";
+            document.getElementById("nameInput").placeholder = tUI("namePlaceholder") || "Your name (max 10 characters)";
+            document.getElementById("joinButton").textContent = tUI("joinButton") || "Join Lobby";
+            document.getElementById("waitingHeader").textContent = tUI("waitingHeader") || "Joined";
+            document.getElementById("phoneEnterButton").textContent = tUI("enterMansion") || "Enter the Mansion";
+
+            const roomBarLabel = document.querySelector('#roomBar label');
+            if (roomBarLabel) roomBarLabel.textContent = tUI("chooseRoomLabel") || "Choose a room";
+
+            const inventoryTitle = document.getElementById("inventoryTitle");
+            if (inventoryTitle) inventoryTitle.textContent = tUI("inventoryTitle") || "Inventory";
+
+            const diningDesc = document.getElementById("diningPopupDescription");
+            if (diningDesc) diningDesc.textContent = tUI("diningLookDescription") || "Seems like he barely touched his food.";
+
+            const bodyOutlineDesc = document.getElementById("bodyOutlinePopupDescription");
+            if (bodyOutlineDesc) {
+                bodyOutlineDesc.textContent = tUI("bodyOutlineDescription")
+                    || "The body was found here on the lobby floor. Seems like the victim stumbled down the stairs.";
+            }
+
+            // Room dropdown, "You are in:" line, and anything else
+            // driven by roomsConfig/charactersConfig/itemsConfig needs
+            // a full re-render rather than a simple textContent swap —
+            // these functions already exist for other reasons and
+            // already check currentLanguage internally.
+            if (typeof buildRoomSelect === "function" && joinedLobby) buildRoomSelect();
+            if (typeof showRoomImage === "function" && joinedLobby) showRoomImage(currentRoom);
+            if (typeof renderInventory === "function") renderInventory();
+        }
+
+        function setLanguage(lang) {
+            currentLanguage = (lang === "hr") ? "hr" : "en";
+            localStorage.setItem("gameLanguage", currentLanguage);
+            applyLanguage();
+        }
 
         // The room the player is currently looking at. Kept in sync by
         // showRoomImage() and used to re-render hotspots after events
@@ -1765,7 +2089,8 @@
             socket.emit("joinLobby", {
                 code: savedLobbyCode,
                 name: savedPlayerName || "Player",
-                playerToken
+                playerToken,
+                language: currentLanguage
             });
         });
 
@@ -1774,6 +2099,12 @@
         if (savedLobbyCode) {
             document.getElementById("codeInput").value = savedLobbyCode;
         }
+
+        // Applies the saved (or default) language to the join screen
+        // immediately on load — everything else (room/item/character
+        // content) translates itself the moment its own render
+        // function runs, since those all check currentLanguage live.
+        applyLanguage();
 
         if (savedPlayerName) {
             document.getElementById("nameInput").value = savedPlayerName;
@@ -1831,7 +2162,7 @@
         const crowSoundElement = document.getElementById("crowSoundElement");
         const catSoundElement = document.getElementById("catSoundElement");
         const pianoHotspot = document.getElementById("pianoHotspot");
-        const itemRemovedSoundElement = document.getElementById("itemRemovedSoundElement");
+        const sfxElement = document.getElementById("sfxElement");
 
         // Populated from the server — see socket.on("introStory") below
         // and startIntro() in tv/intro.html, which is where this text
@@ -1855,7 +2186,7 @@
             Object.values(roomsConfig).forEach(room => {
                 const option = document.createElement("option");
                 option.value = room.id;
-                option.textContent = room.label;
+                option.textContent = trRoomLabel(room);
 
                 if (room.requiresFlag) {
                     option.dataset.requiresFlag = room.requiresFlag;
@@ -1922,7 +2253,8 @@
             socket.emit("joinLobby", {
                 code,
                 name,
-                playerToken
+                playerToken,
+                language: currentLanguage
             });
         }
 
@@ -1938,7 +2270,7 @@
         });
 
         socket.on("joinError", (message) => {
-            document.getElementById("status").innerText = message;
+            document.getElementById("status").innerText = trMsg(message);
 
             // If this failure was an automatic rejoin attempt (e.g. the
             // lobby expired while we were away), don't keep retrying on
@@ -1985,19 +2317,49 @@
         });
 
         socket.on("pickupSuccess", (item) => {
-            showPickupMessage(item.name);
+            const itemDetails = itemsConfig[item.id];
+            showPickupMessage(trItemName(itemDetails) || item.name);
             animatePickup(item.icon);
             playPickupSound(item.sound);
         });
 
         socket.on("itemReceived", (data) => {
-            showGameMessage(`${data.fromName} gave you ${data.itemName}`);
-            playItemRemovedSound();
+            const itemDetails = itemsConfig[data.itemId];
+            const translatedName = trItemName(itemDetails) || data.itemName;
+
+            showGameMessage(
+                currentLanguage === "hr"
+                    ? `${data.fromName} ti je dao/dala: ${translatedName}`
+                    : `${data.fromName} gave you ${translatedName}`
+            );
         });
 
-        socket.on("itemRemoved", () => {
-            playItemRemovedSound();
+        // No sound handling here on purpose — items leaving the
+        // inventory (given away, consumed by a puzzle) no longer play
+        // a generic sound. Specific actions (e.g. clickFireHotspot,
+        // useBasementDoor below) play their own sound directly instead.
+        socket.on("itemRemoved", () => {});
+
+        socket.on("waterUsedOnFire", (data) => {
+            playSfx("/sounds/water.mp3");
+            animateItemUseOnHotspot(
+                data.icon,
+                "glass-of-water",
+                document.getElementById("fireHotspot")
+            );
         });
+
+        // The lobby object's own endingStoryText/endingCharacterId is
+        // always kept in English server-side (it's the shared,
+        // reconnect-safe canonical state — see checkAccusationComplete
+        // in server.js). A Croatian player's actual translated ending
+        // text arrives only once, via the accusationResult event below,
+        // so it's captured here and preferred by showEndingScreen()
+        // over the lobby's English copy. Known gap: a Croatian player
+        // who reconnects fresh AFTER the game has already ended (so
+        // they never receive that one-time event) falls back to the
+        // English ending text.
+        let myEndingOverride = null;
 
         socket.on("accusationResult", (data) => {
             // "good"/"bad" endings are handled by syncScreenToLobbyStatus
@@ -2007,8 +2369,15 @@
             // state change, so it's handled entirely here.
             if (data.result === "tie") {
                 document.getElementById("votingOverlay").style.display = "none";
-                showGameMessage("Group hasn't decided who the suspect is.");
+                showGameMessage(trMsg("Group hasn't decided who the suspect is."));
+                return;
             }
+
+            myEndingOverride = {
+                storyText: data.storyText,
+                characterName: data.characterName,
+                backgroundImage: data.backgroundImage
+            };
         });
 
         socket.on("pickupError", (message) => {
@@ -2033,6 +2402,7 @@
         });
 
         socket.on("basementUnlocked", () => {
+            playSfx("/sounds/unlock.mp3");
             showDoorSpotMessage("The key turns. The basement doors slowly open.");
             updateLockedRoomOptions();
             updateBasementVisibility();
@@ -2384,12 +2754,13 @@
             const config = roomsConfig[room];
 
             document.getElementById("currentRoom").innerText =
-                "You are in: " + (config ? config.label : room);
+                (tUI("youAreIn") || "You are in:") + " " + (config ? trRoomLabel(config) : room);
 
             roomSelect.value = room;
             updateLockedRoomOptions();
             showRoomImage(room);
             updateAccuseHotspotVisibility();
+            updateSafeFlashlightVisibility();
             renderVotingOverlay();
         }
 
@@ -2399,8 +2770,11 @@
             document.getElementById("introScreen").style.display = "none";
             document.getElementById("gameScreen").style.display = "none";
 
+            const me = joinedLobby?.players?.find(player => player.token === playerToken);
+            const namePart = me?.name ? ` as ${me.name}` : "";
+
             document.getElementById("waitingText").innerText =
-                "Lobby " + joinedLobby.code + " joined. Waiting for the host to start the game.";
+                `Joined Lobby ${joinedLobby.code}${namePart}. Waiting for the host to start the game.`;
         }
 
         function syncScreenToLobbyStatus(lobby) {
@@ -2444,15 +2818,17 @@
 
             const endingScreen = document.getElementById("endingScreen");
 
-            endingScreen.style.backgroundImage = lobby.endingBackgroundImage
-                ? `linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.8)), url("${lobby.endingBackgroundImage}")`
+            const backgroundImage = myEndingOverride?.backgroundImage || lobby.endingBackgroundImage;
+
+            endingScreen.style.backgroundImage = backgroundImage
+                ? `linear-gradient(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.8)), url("${backgroundImage}")`
                 : "none";
 
             endingScreen.style.display = "flex";
 
             if (!endingTypewriterStarted) {
                 endingTypewriterStarted = true;
-                startEndingTypewriter(lobby.endingStoryText || "");
+                startEndingTypewriter(myEndingOverride?.storyText || lobby.endingStoryText || "");
             }
         }
 
@@ -2492,7 +2868,10 @@
         function finishEndingTypewriter() {
             const verdict = document.getElementById("endingVerdict");
 
-            verdict.textContent = currentEndingResult === "good" ? "GOOD ENDING" : "BAD ENDING";
+            const goodLabel = currentLanguage === "hr" ? "DOBAR ZAVRŠETAK" : "GOOD ENDING";
+            const badLabel = currentLanguage === "hr" ? "LOŠ ZAVRŠETAK" : "BAD ENDING";
+
+            verdict.textContent = currentEndingResult === "good" ? goodLabel : badLabel;
             verdict.style.color = currentEndingResult === "good" ? "#3ddc73" : "#ff4d4d";
             verdict.style.display = "block";
 
@@ -2513,13 +2892,57 @@
             });
         }
 
+        // Mirrors buildStory() in tv/intro.html, but in Croatian and
+        // built locally on this phone — the TV always broadcasts
+        // English (see introStoryReady/introStory), so a Croatian
+        // player needs their own version rather than a translation of
+        // text that never arrives in Croatian in the first place.
+        // Uses this phone's own local clock, same as the TV uses its
+        // own — on the same wifi at the same party these will always
+        // match anyway.
+        function buildCroatianStory(lobby) {
+            const now = new Date();
+
+            const dateStr = now.toLocaleDateString("hr-HR", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric"
+            });
+
+            const timeStr = now.toLocaleTimeString("hr-HR", {
+                hour: "numeric",
+                minute: "2-digit"
+            });
+
+            const detectiveNames = (lobby?.players || [])
+                .map(p => p.name)
+                .filter(Boolean)
+                .join(", ");
+
+            const detectiveLine = detectiveNames
+                ? `Ekipa detektiva — ${detectiveNames} — pozvana je na mjesto događaja kako bi istražila ovu neobičnu smrt.`
+                : "Ekipa detektiva pozvana je na mjesto događaja kako bi istražila ovu neobičnu smrt.";
+
+            return [
+                `${dateStr}, ${timeStr}.`,
+                "",
+                "Vlasnik ovog dvorca pronađen je mrtav u predvorju, u podnožju stepenica, a otkrio ga je batler.",
+                "Na tijelu nije bilo rana, što upućuje na tragičnu nesreću.",
+                "",
+                detectiveLine
+            ].join("\n");
+        }
+
         function showIntroScreen() {
             document.getElementById("joinScreen").style.display = "none";
             document.getElementById("waitingScreen").style.display = "none";
             document.getElementById("introScreen").style.display = "flex";
             document.getElementById("gameScreen").style.display = "none";
 
-            if (!story && joinedLobby && joinedLobby.introStory) {
+            if (currentLanguage === "hr") {
+                if (!story) story = buildCroatianStory(joinedLobby);
+            } else if (!story && joinedLobby && joinedLobby.introStory) {
                 story = joinedLobby.introStory;
             }
 
@@ -2547,22 +2970,64 @@
                 return;
             }
 
+            fitPhoneStoryTextToScreen(story);
             typeNextPhoneLetter();
         }
 
         // Fired by the server once the TV has built the story text (see
         // introStoryReady in tv/intro.html). Also covers a player who's
-        // sitting on the intro screen waiting when it arrives.
+        // sitting on the intro screen waiting when it arrives. Only
+        // used for English — a Croatian player already built their own
+        // version locally in showIntroScreen() above, so this is
+        // ignored for them rather than overwriting it with English.
         socket.on("introStory", (text) => {
             if (typeof text !== "string" || !text) return;
+            if (currentLanguage === "hr") return;
 
             story = text;
 
             if (introStoryPending) {
                 introStoryPending = false;
+                fitPhoneStoryTextToScreen(story);
                 typeNextPhoneLetter();
             }
         });
+
+        const PHONE_STORY_MAX_FONT_PX = 27;
+        const PHONE_STORY_MIN_FONT_PX = 13;
+
+        // Same idea as fitStoryTextToScreen() in tv/intro.html: measure
+        // the FULL story text against the space actually available on
+        // this phone's screen, and pick the largest font size that
+        // fits without #phoneStoryTextScroll needing to scroll. Run
+        // once, before typing starts, so the box/font stays fixed for
+        // the whole typing animation.
+        function fitPhoneStoryTextToScreen(fullStory) {
+            const scrollEl = document.getElementById("phoneStoryTextScroll");
+
+            // Reserve room for the Enter button, box padding, and some
+            // breathing room, so the fitted text doesn't leave the
+            // button crammed against the last line on a small screen.
+            const reservedPx = 110;
+            const maxHeightPx = Math.max(
+                window.innerHeight * 0.94 - reservedPx,
+                90
+            );
+
+            phoneStoryText.textContent = fullStory;
+
+            let fontSize = PHONE_STORY_MAX_FONT_PX;
+            phoneStoryText.style.fontSize = fontSize + "px";
+
+            while (scrollEl.scrollHeight > maxHeightPx && fontSize > PHONE_STORY_MIN_FONT_PX) {
+                fontSize -= 1;
+                phoneStoryText.style.fontSize = fontSize + "px";
+            }
+
+            // Clear it back out — typeNextPhoneLetter() below re-reveals
+            // the text one letter at a time at this now-fixed font size.
+            phoneStoryText.textContent = "";
+        }
 
         function typeNextPhoneLetter() {
             if (letterIndex >= story.length) {
@@ -2712,6 +3177,7 @@
 
                 if (spot.width) element.style.width = spot.width;
                 if (spot.height) element.style.height = spot.height;
+                if (spot.opacity !== undefined) element.style.opacity = spot.opacity;
 
                 element.onclick = () => pickupItem(spot.placementId, spot);
 
@@ -2781,7 +3247,7 @@
             if (!catConfig) return;
 
             const img = document.createElement("img");
-            img.className = "hotspot characterHotspot";
+            img.className = "hotspot characterHotspot catHotspotIcon";
             img.src = catConfig.image;
             img.alt = "Cat";
             img.style.left = catConfig.left;
@@ -2831,11 +3297,11 @@
             openCharacterId = characterId;
 
             document.getElementById("characterPopupImage").src = character.closeupImage;
-            document.getElementById("characterPopupImage").alt = character.name;
-            document.getElementById("characterPopupName").textContent = character.name;
-            document.getElementById("characterDialogueText").textContent = character.introLine;
+            document.getElementById("characterPopupImage").alt = trCharacterName(character);
+            document.getElementById("characterPopupName").textContent = trCharacterName(character);
+            document.getElementById("characterDialogueText").textContent = trCharacterIntro(character);
 
-            renderQuestionButtons(character.questions);
+            renderQuestionButtons(trCharacterQuestions(character));
 
             // The Cook has one extra question, only shown to a player
             // who's currently carrying the Kitchen Knife — see
@@ -2875,14 +3341,15 @@
             const button = document.createElement("button");
             button.type = "button";
             button.className = "characterQuestionButton";
-            button.textContent = "Why is this knife bloody?";
+            button.textContent = tUI("askCookKnifeButton") || "Why is this knife bloody?";
 
             button.onclick = () => {
                 if (!joinedLobby) return;
 
                 socket.emit("askCookAboutKnife", {
                     code: joinedLobby.code,
-                    playerToken
+                    playerToken,
+                    language: currentLanguage
                 });
             };
 
@@ -2890,7 +3357,9 @@
         }
 
         // The answer to the question above — only ever delivered here,
-        // to whichever player asked it.
+        // to whichever player asked it. Already in the right language
+        // (the server picked it based on the `language` sent above),
+        // so it's displayed as-is with no client-side translation step.
         socket.on("cookKnifeAnswer", (data) => {
             document.getElementById("characterDialogueText").textContent = data.answer;
         });
@@ -2901,14 +3370,15 @@
             const button = document.createElement("button");
             button.type = "button";
             button.className = "characterQuestionButton";
-            button.textContent = "What do you know about the safe?";
+            button.textContent = tUI("askButlerSafeButton") || "What do you know about the safe?";
 
             button.onclick = () => {
                 if (!joinedLobby) return;
 
                 socket.emit("askButlerAboutSafe", {
                     code: joinedLobby.code,
-                    playerToken
+                    playerToken,
+                    language: currentLanguage
                 });
             };
 
@@ -2922,14 +3392,15 @@
         // The Mysterious Person's entire interaction is server-driven —
         // the server decides whether to reveal his hint (based on
         // lobby.skullGivenBy / whether this player currently has the
-        // skull) and sends back exactly which line to show, via
-        // mysteriousPersonDialogue below. No local state to check here.
+        // skull) and sends back exactly which line to show, already in
+        // the right language, via mysteriousPersonDialogue below.
         function interactWithMysteriousPerson() {
             if (!joinedLobby) return;
 
             socket.emit("interactWithMysteriousPerson", {
                 code: joinedLobby.code,
-                playerToken
+                playerToken,
+                language: currentLanguage
             });
         }
 
@@ -2951,8 +3422,8 @@
 
             document.getElementById("characterPopupImage").src =
                 showAfterSkull ? character.closeupImageAfterSkull : character.closeupImage;
-            document.getElementById("characterPopupImage").alt = character.name;
-            document.getElementById("characterPopupName").textContent = character.name;
+            document.getElementById("characterPopupImage").alt = trCharacterName(character);
+            document.getElementById("characterPopupName").textContent = trCharacterName(character);
             document.getElementById("characterDialogueText").textContent = data.line;
 
             // Only the giver's dialogue ever includes real questions
@@ -3243,11 +3714,13 @@
         function openAccusationMenu() {
             if (!joinedLobby) return;
 
+            playSfx("/sounds/phone.mp3");
+
             const list = document.getElementById("accusationMenuList");
             const suspects = getKnownSuspects();
 
             if (!suspects.length) {
-                list.innerHTML = '<div class="noSuspectsText">No suspects</div>';
+                list.innerHTML = `<div class="noSuspectsText">${tUI("noSuspects") || "No suspects"}</div>`;
             } else {
                 list.innerHTML = "";
 
@@ -3255,7 +3728,7 @@
                     const button = document.createElement("button");
                     button.type = "button";
                     button.className = "suspectButton";
-                    button.textContent = character.name;
+                    button.textContent = trCharacterName(character);
                     button.onclick = () => chooseAccusation(character.id);
 
                     list.appendChild(button);
@@ -3317,7 +3790,9 @@
             }
 
             document.getElementById("votingAccuserLine").textContent =
-                `${accusation.accuserName} is making an accusation`;
+                currentLanguage === "hr"
+                    ? `${accusation.accuserName} podnosi optužbu`
+                    : `${accusation.accuserName} is making an accusation`;
 
             const myVote = accusation.votes ? accusation.votes[playerToken] : null;
             const list = document.getElementById("votingList");
@@ -3332,7 +3807,7 @@
                     button.classList.add("votedFor");
                 }
 
-                button.textContent = character.name;
+                button.textContent = trCharacterName(character);
                 button.onclick = () => castVote(character.id);
 
                 list.appendChild(button);
@@ -3394,6 +3869,7 @@
         function openSafePopup() {
             closeCharacterPopup();
             closeItemPopup();
+            updateSafeFlashlightVisibility();
             document.getElementById("safePopupOverlay").style.display = "flex";
         }
 
@@ -3401,11 +3877,33 @@
             document.getElementById("safePopupOverlay").style.display = "none";
         }
 
-        // Placeholders for now — "Safe Item 1"/"Safe Item 2" — swap
-        // these for a real pickupItem-style flow once you've decided
-        // what actually lives in the safe.
-        function inspectSafeItem(number) {
-            showGameMessage(`Safe Item ${number}`);
+        // Same pickupItem() used by every other item in the game —
+        // the flashlight just happens to live in the safe rather than
+        // a room's itemHotspots. pendingPickupSpot is left null here,
+        // so the pickup-fly animation defaults to the center of the
+        // room behind this popup rather than a specific room position
+        // (there isn't a meaningful "room position" for something
+        // inside the safe).
+        function pickupSafeFlashlight() {
+            pickupItem("safe-flashlight", null);
+        }
+
+        // Hides the flashlight button entirely once it's been taken —
+        // by this player or anyone else — same taken-by/already-have
+        // check renderItemHotspots() uses for room items. Called both
+        // when the popup opens and on every lobby update, so it also
+        // disappears live if another player takes it while your popup
+        // happens to already be open.
+        function updateSafeFlashlightVisibility() {
+            const hotspot = document.getElementById("safeFlashlightHotspot");
+            if (!hotspot) return;
+
+            const placement = joinedLobby?.items?.["safe-flashlight"];
+            const alreadyHave = inventory.some(item => item.id === "flashlight");
+
+            const taken = Boolean(placement?.takenBy) || alreadyHave;
+
+            hotspot.style.display = taken ? "none" : "block";
         }
 
         function updateBasementPuzzle() {
@@ -3461,6 +3959,62 @@
             }, 900);
         }
 
+        // Animates an item flying from its current inventory slot to a
+        // specific hotspot in the room — used when an item is "used"
+        // on something (e.g. the glass of water on the kitchen fire)
+        // rather than picked up or given away. Falls back to a
+        // reasonable default starting point (bottom-center, roughly
+        // where the inventory bar sits) if the item's exact slot can't
+        // be found, e.g. because renderInventory() already ran and
+        // removed it by the time this fires.
+        function animateItemUseOnHotspot(iconPath, itemId, hotspotEl) {
+            if (!iconPath || !hotspotEl) return;
+
+            const slotEl = document.querySelector(
+                `.inventorySlot[data-item-id="${itemId}"]`
+            );
+
+            const startRect = slotEl
+                ? slotEl.getBoundingClientRect()
+                : null;
+
+            const startX = startRect
+                ? startRect.left + startRect.width / 2
+                : window.innerWidth / 2;
+
+            const startY = startRect
+                ? startRect.top + startRect.height / 2
+                : window.innerHeight - 60;
+
+            const hotspotRect = hotspotEl.getBoundingClientRect();
+            const endX = hotspotRect.left + hotspotRect.width / 2;
+            const endY = hotspotRect.top + hotspotRect.height / 2;
+
+            const flyIcon = document.createElement("img");
+            flyIcon.className = "item-use-fly";
+            flyIcon.src = iconPath;
+            flyIcon.style.left = startX + "px";
+            flyIcon.style.top = startY + "px";
+
+            document.body.appendChild(flyIcon);
+
+            // Force a reflow so the browser registers the starting
+            // position above before the destination change below
+            // triggers the CSS transition — otherwise both would apply
+            // in the same frame and there'd be no visible motion.
+            // eslint-disable-next-line no-unused-expressions
+            flyIcon.offsetHeight;
+
+            flyIcon.style.left = endX + "px";
+            flyIcon.style.top = endY + "px";
+            flyIcon.style.opacity = "0";
+            flyIcon.style.transform = "translate(-50%, -50%) scale(0.4)";
+
+            setTimeout(() => {
+                flyIcon.remove();
+            }, 750);
+        }
+
         function renderInventory() {
             const slots = document.getElementById("inventorySlots");
             const maxSlots = 8;
@@ -3475,6 +4029,7 @@
                         <div
                             class="inventorySlot filled"
                             title="${escapeHtml(item.name)}"
+                            data-item-id="${escapeHtml(item.id)}"
                             onclick="openItemActionSheet('${item.id}')"
                         >
                             <img src="${item.icon}" alt="${escapeHtml(item.name)}">
@@ -3509,7 +4064,10 @@
 
             actionSheetItemId = itemId;
 
-            document.getElementById("itemActionSheetName").textContent = item.name;
+            const itemDetails = itemsConfig[itemId];
+            document.getElementById("itemActionSheetName").textContent = trItemName(itemDetails) || item.name;
+            document.getElementById("itemActionInspectButton").textContent = tUI("inspectButton") || "Inspect";
+            document.getElementById("itemActionSheetGiveLabel").textContent = tUI("giveToLabel") || "Give item to:";
             renderGiveItemPlayerList();
 
             document.getElementById("itemActionSheetOverlay").style.display = "flex";
@@ -3570,13 +4128,20 @@
             const item = inventory.find(invItem => invItem.id === itemId);
             if (!item) return;
 
+            // inventory[] only carries the English fields the server
+            // put there when the item was picked up/given — the fuller
+            // itemsConfig (loaded from /api/game-data) has the Croatian
+            // nameHr/descriptionHr fields too, keyed by the same id.
+            const itemDetails = itemsConfig[itemId];
+
             closeCharacterPopup();
             closeItemActionSheet();
 
             document.getElementById("itemPopupImage").src = item.popupImage || item.icon;
-            document.getElementById("itemPopupImage").alt = item.name;
-            document.getElementById("itemPopupName").textContent = item.name;
-            document.getElementById("itemPopupDescription").textContent = item.description || "";
+            document.getElementById("itemPopupImage").alt = trItemName(itemDetails) || item.name;
+            document.getElementById("itemPopupName").textContent = trItemName(itemDetails) || item.name;
+            document.getElementById("itemPopupDescription").textContent =
+                trItemDescription(itemDetails) || item.description || "";
 
             document.getElementById("itemPopupOverlay").style.display = "flex";
         }
@@ -3590,7 +4155,7 @@
 
             clearTimeout(gameMessageTimer);
 
-            messageBox.textContent = message;
+            messageBox.textContent = trMsg(message);
             messageBox.style.display = "block";
 
             gameMessageTimer = setTimeout(() => {
@@ -3604,7 +4169,7 @@
 
             clearTimeout(gameMessageTimer);
 
-            messageBox.textContent = message;
+            messageBox.textContent = trMsg(message);
             messageBox.style.display = "block";
 
             messageBox.style.position = "fixed";
@@ -3669,16 +4234,19 @@
             });
         }
 
-        // Always the same fixed sound (pickupitemsound.mp3), regardless
-        // of which item — used whenever an item leaves this player's
-        // inventory for a reason other than a fresh pickup (given away,
-        // or consumed by a puzzle), or arrives from another player.
-        function playItemRemovedSound() {
-            if (!itemRemovedSoundElement) return;
+        // Plays any one-off sound effect by path, reusing a single
+        // shared <audio> element rather than needing a dedicated
+        // element per sound. Used for specific item-use moments (e.g.
+        // the water glass on the kitchen fire, the basement key on the
+        // locked door) — there's no longer a generic sound that plays
+        // just because an item left the inventory.
+        function playSfx(path) {
+            if (!sfxElement || !path) return;
 
-            itemRemovedSoundElement.currentTime = 0;
+            sfxElement.src = path;
+            sfxElement.currentTime = 0;
 
-            itemRemovedSoundElement.play().catch(() => {
+            sfxElement.play().catch(() => {
                 // Sound is optional. Browsers may block audio until interaction.
             });
         }
@@ -3758,7 +4326,7 @@
             forgetSession();
 
             document.getElementById("gameScreen").style.display = "none";
-            document.getElementById("joinScreen").style.display = "block";
+            document.getElementById("joinScreen").style.display = "flex";
             document.getElementById("status").innerText = "You left the lobby.";
         }
 
@@ -3789,7 +4357,7 @@
             document.getElementById("waitingScreen").style.display = "none";
             document.getElementById("introScreen").style.display = "none";
             document.getElementById("gameScreen").style.display = "none";
-            document.getElementById("joinScreen").style.display = "block";
+            document.getElementById("joinScreen").style.display = "flex";
 
             document.getElementById("status").innerText =
                 message || "You left the lobby.";

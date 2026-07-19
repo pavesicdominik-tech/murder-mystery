@@ -29,39 +29,49 @@ const ITEMS = {
     "basement-key": {
         id: "basement-key",
         name: "Basement Key",
+        nameHr: "Ključ podruma",
         icon: "/images/items/basement-key.png",
         // No popupImage set, so tapping it in the inventory will just
         // show a bigger version of the icon above.
-        description: "An old iron key. It may unlock the basement."
+        description: "An old iron key. It may unlock the basement.",
+        descriptionHr: "Stari željezni ključ. Možda otključava podrum."
         // No pickupSound set, so this plays DEFAULT_PICKUP_SOUND.
     },
 
     flashlight: {
         id: "flashlight",
         name: "Flashlight",
+        nameHr: "Baterijska svjetiljka",
         icon: "/images/items/flashlight.png",
-        description: "A working flashlight. You'll need it to see in any pitch-dark room."
+        description: "A working flashlight. You'll need it to see in any pitch-dark room.",
+        descriptionHr: "Ispravna baterijska svjetiljka. Trebat će ti da vidiš u mrkloj sobi."
     },
 
     skull: {
         id: "skull",
         name: "Skull",
+        nameHr: "Lubanja",
         icon: "/images/items/skull.png",
-        description: "A small carved skull. Strange energy seems to radiate from it."
+        description: "A small carved skull. Strange energy seems to radiate from it.",
+        descriptionHr: "Mala izrezbarena lubanja. Čini se da iz nje zrači neobična energija."
     },
 
     "glass-of-water": {
         id: "glass-of-water",
         name: "Glass of Water",
+        nameHr: "Čaša vode",
         icon: "/images/items/glass-of-water.png",
-        description: "A glass filled with water. Might be useful somewhere."
+        description: "A glass filled with water. Might be useful somewhere.",
+        descriptionHr: "Čaša napunjena vodom. Možda će negdje dobro doći."
     },
 
     "kitchen-knife": {
         id: "kitchen-knife",
         name: "Kitchen Knife",
+        nameHr: "Kuhinjski nož",
         icon: "/images/items/kitchen-knife.png",
-        description: "A bloody knife. I wonder whose blood it is."
+        description: "A bloody knife. I wonder whose blood it is.",
+        descriptionHr: "Krvavi nož. Pitam se čija je to krv."
     },
 
     // Two different icons on purpose: `icon` is what shows in the
@@ -74,10 +84,12 @@ const ITEMS = {
     "wrinkled-note": {
         id: "wrinkled-note",
         name: "Wrinkled Note",
+        nameHr: "Zgužvana bilješka",
         icon: "/images/items/paper-roll.png",
         inventoryIcon: "/images/items/wrinkled-paper.png",
         popupImage: "/images/items/wrinkled-paper.png",
-        description: "A debt notice, crumpled and re-smoothed more than once. It seems the son owed someone a considerable amount of money."
+        description: "A debt notice, crumpled and re-smoothed more than once. It seems the son owed someone a considerable amount of money.",
+        descriptionHr: "Opomena za dug, zgužvana i ponovno izglađena više puta. Čini se da je sin nekome dugovao znatnu svotu novca."
     },
 
     // No placement below for this one — it's never sitting in a room
@@ -87,8 +99,10 @@ const ITEMS = {
     "burned-note": {
         id: "burned-note",
         name: "Burned Note",
+        nameHr: "Izgorjela bilješka",
         icon: "/images/items/burned-note.png",
-        description: "A scrap of paper, scorched at the edges. Barely readable."
+        description: "A scrap of paper, scorched at the edges. Barely readable.",
+        descriptionHr: "Komadić papira, opaljen po rubovima. Jedva čitljiv."
     }
 
     // Example of how a future item with its own pickup sound would
@@ -114,9 +128,9 @@ const ITEM_PLACEMENTS = [
         room: "library"
     },
     {
-        placementId: "kitchen-flashlight",
+        placementId: "safe-flashlight",
         itemId: "flashlight",
-        room: "kitchen"
+        room: "basement"
     },
     {
         placementId: "attic-skull",
@@ -180,9 +194,11 @@ function getClientItems() {
         clientItems[id] = {
             id: item.id,
             name: item.name,
+            nameHr: item.nameHr || null,
             icon: item.icon,
             popupImage: item.popupImage || item.icon,
-            description: item.description
+            description: item.description,
+            descriptionHr: item.descriptionHr || null
         };
     }
 
