@@ -132,7 +132,11 @@
         }
 
         .languageFlag {
-            font-size: 18px;
+            width: 20px;
+            height: 20px;
+            object-fit: cover;
+            border-radius: 3px;
+            vertical-align: middle;
         }
 
         input,
@@ -485,35 +489,13 @@
             background: none;
         }
 
-        .pickup-fly {
-            position: absolute;
-            z-index: 20;
-            width: 58px;
-            height: 58px;
-            object-fit: contain;
-            pointer-events: none;
-            transform: translate(-50%, -50%);
-            animation: flyToInventory 850ms ease-in forwards;
-        }
-
-        @keyframes flyToInventory {
-            0% {
-                opacity: 1;
-                transform: translate(-50%, -50%) scale(1);
-            }
-
-            70% {
-                opacity: 1;
-                transform: translate(-50%, -50%) scale(1.2);
-            }
-
-            100% {
-                left: 50%;
-                top: 112%;
-                opacity: 0;
-                transform: translate(-50%, -50%) scale(0.25);
-            }
-        }
+        /* Item pickups now share the same JS-driven fly mechanism as
+           item-use animations (see flyIconBetweenPoints() and
+           .item-use-fly below) rather than a fixed CSS keyframe — this
+           lets the animation start from the item's exact room
+           position and end at the exact next-empty inventory slot,
+           rather than a generic "toward the bottom of the screen"
+           guess. */
 
         /* Used only for giving the Skull to the Mysterious Person —
            position: fixed (viewport-relative, not room-canvas-relative)
@@ -545,16 +527,15 @@
             }
         }
 
-        /* Used when an inventory item is "used" on a room hotspot
-           (e.g. the glass of water on the kitchen fire) rather than
-           picked up or given away. Unlike .pickup-fly (which lives
-           inside #roomCanvas and uses room-relative % coordinates),
-           this needs position: fixed with real pixel coordinates set
-           by JS — it has to bridge between the inventory bar (a fixed
-           screen element) and a hotspot that may be scrolled to any
-           position within the room image. See animateItemUseOnHotspot()
-           below, which sets the starting/ending left/top itself; the
-           only thing fixed here is the transition and fade/scale. */
+        /* Shared by both "item picked up" and "item used on a hotspot"
+           animations (see flyIconBetweenPoints(), animatePickup(), and
+           animateItemUseOnHotspot() below). position: fixed with real
+           pixel coordinates set by JS, rather than room-relative %
+           coordinates, since these need to bridge between the
+           inventory bar (a fixed screen element) and room hotspots
+           that may be scrolled to any position within the room image —
+           the only thing fixed here is the transition and fade/scale;
+           every start/end position is computed and set by JS. */
         .item-use-fly {
             position: fixed;
             z-index: 1600;
@@ -805,7 +786,7 @@
             color: #d6b57b;
         }
 
-        #bodyOutlinePopupOverlay {
+        .flavorPopupOverlay {
             display: none;
             position: fixed;
             inset: 0;
@@ -816,7 +797,7 @@
             background: rgba(0, 0, 0, 0.82);
         }
 
-        #bodyOutlinePopupBox {
+        .flavorPopupBox {
             width: min(360px, 100%);
             max-height: 90vh;
             max-height: 90dvh;
@@ -829,7 +810,7 @@
             box-shadow: 0 15px 50px black;
         }
 
-        #bodyOutlinePopupDescription {
+        .flavorPopupDescription {
             font-size: 16px;
             line-height: 1.55;
             color: #f2e5c4;
@@ -942,6 +923,13 @@
            real character — it's a static prop, not a living NPC. */
         .catHotspotIcon {
             animation: none;
+            border: none;
+            background: none;
+        }
+
+        .catHotspotIcon:hover {
+            border: none;
+            background: none;
         }
 
         #characterPopupOverlay {
@@ -1420,10 +1408,10 @@
                 <div id="languageLabel">Choose language / Odaberi jezik</div>
                 <div id="languageButtons">
                     <button type="button" class="languageButton" id="languageButtonEn" onclick="setLanguage('en')">
-                        <span class="languageFlag">🇬🇧</span> English
+                        <img class="languageFlag" src="/images/engico.png" alt="English"> English
                     </button>
                     <button type="button" class="languageButton" id="languageButtonHr" onclick="setLanguage('hr')">
-                        <span class="languageFlag">🇭🇷</span> Hrvatski
+                        <img class="languageFlag" src="/images/croico.png" alt="Hrvatski"> Hrvatski
                     </button>
                 </div>
             </div>
@@ -1551,7 +1539,7 @@
                         id="diningLookHotspot"
                         class="hotspot invisibleHotspot"
                         onclick="openDiningLookPopup()"
-                        style="display: none; left: 42%; top: 78%; width: 16%; height: 16%;"
+                        style="display: none; left: 48%; top: 38%; width: 15%; height: 54%;"
                     >
                         Look closer
                     </button>
@@ -1570,6 +1558,20 @@
                         style="display: none; left: 32%; top: 71%; width: 30%; height: 18%;"
                     >
                         Body outline
+                    </button>
+
+                    <!--
+                        Library tea cup — invisible flavor hotspot, same
+                        pattern as the body outline above. Purely
+                        cosmetic, no server round trip needed.
+                    -->
+                    <button
+                        id="libraryTeaHotspot"
+                        class="hotspot invisibleHotspot"
+                        onclick="openLibraryTeaPopup()"
+                        style="display: none; left: 56%; top: 73%; width: 5%; height: 4%;"
+                    >
+                        Tea cup
                     </button>
 
                     <div id="flashlightOverlay"></div>
@@ -1644,9 +1646,19 @@
             Lobby body outline flavor popup — text only, no image. See
             openBodyOutlinePopup()/closeBodyOutlinePopup() below.
         -->
-        <div id="bodyOutlinePopupOverlay" onclick="closeBodyOutlinePopup()">
-            <div id="bodyOutlinePopupBox">
-                <div id="bodyOutlinePopupDescription">The body was found here on the lobby floor. Seems like the victim stumbled down the stairs.</div>
+        <div id="bodyOutlinePopupOverlay" class="flavorPopupOverlay" onclick="closeBodyOutlinePopup()">
+            <div class="flavorPopupBox">
+                <div class="flavorPopupDescription" id="bodyOutlinePopupDescription">The body was found here on the lobby floor. Seems like the victim stumbled down the stairs.</div>
+            </div>
+        </div>
+
+        <!--
+            Library tea cup flavor popup — text only, no image. See
+            openLibraryTeaPopup()/closeLibraryTeaPopup() below.
+        -->
+        <div id="libraryTeaPopupOverlay" class="flavorPopupOverlay" onclick="closeLibraryTeaPopup()">
+            <div class="flavorPopupBox">
+                <div class="flavorPopupDescription" id="libraryTeaPopupDescription">Tea is cold, seems like nobody touched it.</div>
             </div>
         </div>
 
@@ -1768,9 +1780,9 @@
             <button
                 type="button"
                 id="endingEndGameButton"
-                onclick="endGameForEveryone()"
+                onclick="leaveLobby()"
                 style="display: none;"
-            >End Game</button>
+            >Leave Game</button>
         </div>
     </div>
 
@@ -1790,9 +1802,9 @@
                 <button class="keypadButton" onclick="pressKeypadNumber('8')">8</button>
                 <button class="keypadButton" onclick="pressKeypadNumber('9')">9</button>
 
-                <button class="keypadButton action" onclick="clearKeypad()">CLEAR</button>
+                <button id="keypadClearButton" class="keypadButton action" onclick="clearKeypad()">CLEAR</button>
                 <button class="keypadButton" onclick="pressKeypadNumber('0')">0</button>
-                <button class="keypadButton enter" onclick="submitKeypadCode()">ENTER</button>
+                <button id="keypadEnterButton" class="keypadButton enter" onclick="submitKeypadCode()">ENTER</button>
             </div>
 
             <button id="closeKeypadButton" onclick="closeSafeKeypad()">
@@ -1913,10 +1925,20 @@
             noSuspects: "Još nema osumnjičenih",
             diningLookDescription: "Čini se da je jedva dirao hranu.",
             bodyOutlineDescription: "Tijelo je pronađeno ovdje na podu predvorja. Čini se da je žrtva pala niz stepenice.",
+            libraryTeaDescription: "Čaj je hladan, čini se da ga nitko nije dotaknuo.",
             enterCode: "Unesi kod",
             wrongCode: "Pogrešan kod",
             askCookKnifeButton: "Zašto je ovaj nož krvav?",
-            askButlerSafeButton: "Što znate o sefu?"
+            askButlerSafeButton: "Što znate o sefu?",
+            accusationMenuTitle: "Koga optužuješ?",
+            votingSubtitle: "Glasaj za osumnjičenog/u:",
+            pianoTitle: "Odsviraj melodiju",
+            pianoCloseButton: "Zatvori",
+            securityKeypadTitle: "SIGURNOSNA TIPKOVNICA",
+            endGameButton: "Napusti igru",
+            keypadClear: "OBRIŠI",
+            keypadEnter: "UNESI",
+            closeButton: "Zatvori"
         };
 
         // Known plain-English system/status messages the SERVER sends
@@ -1942,7 +1964,31 @@
             "The safe door opens.": "Vrata sefa se otvaraju.",
             "Room is too dark to enter.": "Soba je premračna za ulazak.",
             "At least one player must join before starting.": "Barem jedan igrač mora pristupiti prije početka.",
-            "Group hasn't decided who the suspect is.": "Grupa se nije odlučila tko je osumnjičen/a."
+            "Group hasn't decided who the suspect is.": "Grupa se nije odlučila tko je osumnjičen/a.",
+            "Reconnecting to your game...": "Ponovno povezivanje s igrom...",
+            "You left the lobby.": "Napustio/la si sobu.",
+            "You were removed from the game.": "Uklonjen/a si iz igre.",
+            "The host ended the game.": "Domaćin je završio igru.",
+            "The game has ended.": "Igra je završena.",
+            "Host did not return.": "Domaćin se nije vratio.",
+            "You cannot use that safe.": "Ne možeš koristiti taj sef.",
+            "You need to be in the basement.": "Moraš biti u podrumu.",
+            "Something is blocking the safe.": "Nešto blokira sef.",
+            "You already have that item.": "Već imaš taj predmet.",
+            "You cannot give that item.": "Ne možeš dati taj predmet.",
+            "That player is no longer in the game.": "Taj igrač više nije u igri.",
+            "You don't have that item anymore.": "Više nemaš taj predmet.",
+            "The picture has already been moved.": "Slika je već pomaknuta.",
+            "You need to be in the Library to do that.": "Moraš biti u knjižnici da bi to učinio/la.",
+            "You cannot pick up items for another player.": "Ne možeš pokupiti predmete za drugog igrača.",
+            "That item does not exist.": "Taj predmet ne postoji.",
+            "That item is not configured correctly.": "Taj predmet nije ispravno postavljen.",
+            "You cannot use this door.": "Ne možeš koristiti ova vrata.",
+            "You need to be at the basement door.": "Moraš biti kod vrata podruma.",
+            "Doors are locked, you need a key.": "Vrata su zaključana, treba ti ključ.",
+            "The picture shifts aside, revealing a hidden safe.": "Slika se pomiče u stranu, otkrivajući skriveni sef.",
+            "A bookshelf moves, revealing a passage.": "Polica s knjigama se pomiče, otkrivajući prolaz.",
+            "A heavy mechanism unlocks somewhere in the basement.": "Negdje u podrumu se otključava težak mehanizam."
         };
 
         // Returns the Croatian text for a known fixed English message,
@@ -2023,6 +2069,45 @@
                     || "The body was found here on the lobby floor. Seems like the victim stumbled down the stairs.";
             }
 
+            const libraryTeaDesc = document.getElementById("libraryTeaPopupDescription");
+            if (libraryTeaDesc) {
+                libraryTeaDesc.textContent = tUI("libraryTeaDescription")
+                    || "Tea is cold, seems like nobody touched it.";
+            }
+
+            const accusationTitle = document.getElementById("accusationMenuTitle");
+            if (accusationTitle) accusationTitle.textContent = tUI("accusationMenuTitle") || "Who do you accuse?";
+
+            const accusationCancel = document.getElementById("accusationMenuCancel");
+            if (accusationCancel) accusationCancel.textContent = tUI("cancelButton") || "Cancel";
+
+            const votingSubtitleEl = document.getElementById("votingSubtitle");
+            if (votingSubtitleEl) votingSubtitleEl.textContent = tUI("votingSubtitle") || "Vote for the suspect:";
+
+            const votingCancel = document.getElementById("votingCancelButton");
+            if (votingCancel) votingCancel.textContent = tUI("cancelButton") || "Cancel";
+
+            const pianoTitleEl = document.getElementById("pianoTitle");
+            if (pianoTitleEl) pianoTitleEl.textContent = tUI("pianoTitle") || "Play the melody";
+
+            const pianoClose = document.getElementById("pianoCloseButton");
+            if (pianoClose) pianoClose.textContent = tUI("pianoCloseButton") || "Close";
+
+            const keypadTitle = document.getElementById("safeKeypadTitle");
+            if (keypadTitle) keypadTitle.textContent = tUI("securityKeypadTitle") || "SECURITY KEYPAD";
+
+            const keypadClear = document.getElementById("keypadClearButton");
+            if (keypadClear) keypadClear.textContent = tUI("keypadClear") || "CLEAR";
+
+            const keypadEnter = document.getElementById("keypadEnterButton");
+            if (keypadEnter) keypadEnter.textContent = tUI("keypadEnter") || "ENTER";
+
+            const closeKeypad = document.getElementById("closeKeypadButton");
+            if (closeKeypad) closeKeypad.textContent = tUI("closeButton") || "Close";
+
+            const endGameButton = document.getElementById("endingEndGameButton");
+            if (endGameButton) endGameButton.textContent = tUI("endGameButton") || "Leave Game";
+
             // Room dropdown, "You are in:" line, and anything else
             // driven by roomsConfig/charactersConfig/itemsConfig needs
             // a full re-render rather than a simple textContent swap —
@@ -2084,7 +2169,7 @@
             if (!savedLobbyCode) return;
 
             attemptingAutoRejoin = true;
-            document.getElementById("status").innerText = "Reconnecting to your game...";
+            document.getElementById("status").innerText = trMsg("Reconnecting to your game...");
 
             socket.emit("joinLobby", {
                 code: savedLobbyCode,
@@ -2244,7 +2329,7 @@
             const name = document.getElementById("nameInput").value.trim().slice(0, 10) || "Player";
 
             if (!code) {
-                document.getElementById("status").innerText = "Enter a lobby code.";
+                document.getElementById("status").innerText = trMsg("Enter a lobby code.");
                 return;
             }
 
@@ -2301,11 +2386,11 @@
         });
 
         socket.on("removedFromLobby", (message) => {
-            resetToJoinScreen(message);
+            resetToJoinScreen(trMsg(message));
         });
 
         socket.on("lobbyClosed", (message) => {
-            resetToJoinScreen(message);
+            resetToJoinScreen(trMsg(message));
         });
 
         socket.on("playerUpdate", (data) => {
@@ -2321,6 +2406,17 @@
             showPickupMessage(trItemName(itemDetails) || item.name);
             animatePickup(item.icon);
             playPickupSound(item.sound);
+        });
+
+        socket.on("itemGiven", (data) => {
+            const itemDetails = itemsConfig[data.itemId];
+            const translatedName = trItemName(itemDetails) || data.itemName;
+
+            showGameMessage(
+                currentLanguage === "hr"
+                    ? `Dao/dala si ${data.toName}: ${translatedName}`
+                    : `You gave ${data.toName} the ${translatedName}.`
+            );
         });
 
         socket.on("itemReceived", (data) => {
@@ -2422,7 +2518,7 @@
 
         socket.on("safeCodeWrong", () => {
             keypadLocked = true;
-            keypadDisplay.textContent = "ERROR";
+            keypadDisplay.textContent = currentLanguage === "hr" ? "GREŠKA" : "ERROR";
             keypadDisplay.classList.add("error");
 
             setTimeout(() => {
@@ -2435,7 +2531,7 @@
 
         socket.on("safeCodeCorrect", () => {
             keypadLocked = true;
-            keypadDisplay.textContent = "OPEN";
+            keypadDisplay.textContent = currentLanguage === "hr" ? "OTVORENO" : "OPEN";
             keypadDisplay.classList.remove("error");
 
             setTimeout(() => {
@@ -2735,6 +2831,7 @@
             updateFireHotspot(room);
             updateDiningHotspot(room);
             updateBodyOutlineHotspot(room);
+            updateLibraryTeaHotspot(room);
         }
 
         roomImage.addEventListener("error", () => {
@@ -2883,15 +2980,6 @@
         // lobby-creation page. Any player can trigger this (not just
         // the host) since the mystery is already resolved by the time
         // this button is visible.
-        function endGameForEveryone() {
-            if (!joinedLobby) return;
-
-            socket.emit("endGameSession", {
-                code: joinedLobby.code,
-                playerToken
-            });
-        }
-
         // Mirrors buildStory() in tv/intro.html, but in Croatian and
         // built locally on this phone — the TV always broadcasts
         // English (see introStoryReady/introStory), so a Croatian
@@ -2958,6 +3046,21 @@
             if (joinedLobby) {
                 updatePhoneLobby(joinedLobby);
             }
+
+            // showRoomImage() above already sizes the room canvas once,
+            // synchronously — but #gameScreen just flipped from
+            // display: none to block in this very call, and on some
+            // phones the viewport (especially dvh, once the browser's
+            // address bar finishes collapsing/expanding right after a
+            // screen transition) hasn't fully settled by the time that
+            // synchronous measurement runs. That's what caused the bug
+            // where the Lobby room loaded too narrow to scroll left/
+            // right until leaving and re-entering the room. Re-running
+            // the same deferred recalculation window resize/rotation
+            // already use (via requestAnimationFrame) catches that
+            // late settling automatically, without the player needing
+            // to do anything.
+            handleViewportChange();
         }
 
         function startPhoneIntro() {
@@ -3124,7 +3227,7 @@
                 if (door.width) button.style.width = door.width;
                 if (door.height) button.style.height = door.height;
 
-                button.textContent = door.label;
+                button.textContent = (currentLanguage === "hr" && door.labelHr) ? door.labelHr : door.label;
                 button.onclick = () => selectRoom(door.target);
 
                 doorHotspotsContainer.appendChild(button);
@@ -3864,6 +3967,21 @@
             document.getElementById("bodyOutlinePopupOverlay").style.display = "none";
         }
 
+        function updateLibraryTeaHotspot(room) {
+            const hotspot = document.getElementById("libraryTeaHotspot");
+            if (!hotspot) return;
+
+            hotspot.style.display = room === "library" ? "block" : "none";
+        }
+
+        function openLibraryTeaPopup() {
+            document.getElementById("libraryTeaPopupOverlay").style.display = "flex";
+        }
+
+        function closeLibraryTeaPopup() {
+            document.getElementById("libraryTeaPopupOverlay").style.display = "none";
+        }
+
         // Opened once the safe is unlocked (see socket.on("safeEntered")
         // below) instead of moving the player into a separate room.
         function openSafePopup() {
@@ -3936,7 +4054,9 @@
         function showPickupMessage(itemName) {
             const message = document.getElementById("pickupMessage");
 
-            message.textContent = `You've picked up ${itemName}`;
+            message.textContent = currentLanguage === "hr"
+                ? `Pokupio/la si: ${itemName}`
+                : `You've picked up ${itemName}`;
             message.style.display = "block";
 
             setTimeout(() => {
@@ -3944,51 +4064,15 @@
             }, 1800);
         }
 
-        function animatePickup(iconPath) {
-            const flyIcon = document.createElement("img");
-            flyIcon.className = "pickup-fly";
-            flyIcon.src = iconPath;
-
-            flyIcon.style.left = (pendingPickupSpot && pendingPickupSpot.left) || "50%";
-            flyIcon.style.top = (pendingPickupSpot && pendingPickupSpot.top) || "50%";
-
-            roomCanvas.appendChild(flyIcon);
-
-            setTimeout(() => {
-                flyIcon.remove();
-            }, 900);
-        }
-
-        // Animates an item flying from its current inventory slot to a
-        // specific hotspot in the room — used when an item is "used"
-        // on something (e.g. the glass of water on the kitchen fire)
-        // rather than picked up or given away. Falls back to a
-        // reasonable default starting point (bottom-center, roughly
-        // where the inventory bar sits) if the item's exact slot can't
-        // be found, e.g. because renderInventory() already ran and
-        // removed it by the time this fires.
-        function animateItemUseOnHotspot(iconPath, itemId, hotspotEl) {
-            if (!iconPath || !hotspotEl) return;
-
-            const slotEl = document.querySelector(
-                `.inventorySlot[data-item-id="${itemId}"]`
-            );
-
-            const startRect = slotEl
-                ? slotEl.getBoundingClientRect()
-                : null;
-
-            const startX = startRect
-                ? startRect.left + startRect.width / 2
-                : window.innerWidth / 2;
-
-            const startY = startRect
-                ? startRect.top + startRect.height / 2
-                : window.innerHeight - 60;
-
-            const hotspotRect = hotspotEl.getBoundingClientRect();
-            const endX = hotspotRect.left + hotspotRect.width / 2;
-            const endY = hotspotRect.top + hotspotRect.height / 2;
+        // The shared low-level mechanism behind every "item flies
+        // across the screen" moment in the game — picking something
+        // up, using an item on a hotspot, etc. Takes real, already-
+        // computed viewport pixel coordinates (not percentages), so
+        // it works correctly regardless of scroll position, screen
+        // size, or which coordinate system the start/end points
+        // originally came from.
+        function flyIconBetweenPoints(iconPath, startX, startY, endX, endY) {
+            if (!iconPath) return;
 
             const flyIcon = document.createElement("img");
             flyIcon.className = "item-use-fly";
@@ -4013,6 +4097,103 @@
             setTimeout(() => {
                 flyIcon.remove();
             }, 750);
+        }
+
+        // Finds the exact on-screen pixel position of the room hotspot
+        // an item was just picked up from, using its stored %
+        // left/top/width/height (see pendingPickupSpot, set right
+        // before every pickupItem() call) against #roomCanvas's actual
+        // current size and scroll position — so this is correct no
+        // matter the screen size or how far the room is scrolled.
+        // Falls back to the canvas center for pickups with no specific
+        // room position (currently just the Flashlight, picked up from
+        // inside the safe popup rather than a room hotspot).
+        function getPendingPickupScreenPoint() {
+            const canvasRect = roomCanvas.getBoundingClientRect();
+
+            if (!pendingPickupSpot) {
+                return {
+                    x: canvasRect.left + canvasRect.width / 2,
+                    y: canvasRect.top + canvasRect.height / 2
+                };
+            }
+
+            const leftPct = parseFloat(pendingPickupSpot.left) || 50;
+            const topPct = parseFloat(pendingPickupSpot.top) || 50;
+            const widthPct = parseFloat(pendingPickupSpot.width) || 0;
+            const heightPct = parseFloat(pendingPickupSpot.height) || 0;
+
+            // For hotspots with a width/height (most item hotspots),
+            // land on the middle of the hotspot box rather than its
+            // top-left corner.
+            return {
+                x: canvasRect.left + canvasRect.width * ((leftPct + widthPct / 2) / 100),
+                y: canvasRect.top + canvasRect.height * ((topPct + heightPct / 2) / 100)
+            };
+        }
+
+        // Finds the next empty inventory slot — i.e. exactly where
+        // this new item is about to land once playerUpdate arrives and
+        // re-renders the inventory (see socket.on("playerUpdate")).
+        // pickupSuccess always arrives before playerUpdate for the same
+        // pickup (Socket.io preserves per-socket emit order, and
+        // server.js always emits pickupSuccess first), so `inventory`
+        // here is still last render's state — meaning the first empty
+        // slot right now is exactly where the new item will appear.
+        function getNextInventorySlotScreenPoint() {
+            const slotEls = document.querySelectorAll("#inventorySlots .inventorySlot");
+            const targetSlot = slotEls[inventory.length] || slotEls[slotEls.length - 1];
+
+            if (!targetSlot) {
+                // No slots rendered at all yet — fall back to roughly
+                // where the inventory bar sits.
+                return { x: window.innerWidth / 2, y: window.innerHeight - 60 };
+            }
+
+            const rect = targetSlot.getBoundingClientRect();
+            return {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2
+            };
+        }
+
+        function animatePickup(iconPath) {
+            const start = getPendingPickupScreenPoint();
+            const end = getNextInventorySlotScreenPoint();
+
+            flyIconBetweenPoints(iconPath, start.x, start.y, end.x, end.y);
+        }
+
+        // Animates an item flying from its current inventory slot to a
+        // specific hotspot in the room — used when an item is "used"
+        // on something (e.g. the glass of water on the kitchen fire)
+        // rather than picked up or given away. Falls back to a
+        // reasonable default starting point (bottom-center, roughly
+        // where the inventory bar sits) if the item's exact slot can't
+        // be found, e.g. because renderInventory() already ran and
+        // removed it by the time this fires.
+        function animateItemUseOnHotspot(iconPath, itemId, hotspotEl) {
+            if (!hotspotEl) return;
+
+            const slotEl = document.querySelector(
+                `.inventorySlot[data-item-id="${itemId}"]`
+            );
+
+            const startRect = slotEl ? slotEl.getBoundingClientRect() : null;
+
+            const startX = startRect
+                ? startRect.left + startRect.width / 2
+                : window.innerWidth / 2;
+
+            const startY = startRect
+                ? startRect.top + startRect.height / 2
+                : window.innerHeight - 60;
+
+            const hotspotRect = hotspotEl.getBoundingClientRect();
+            const endX = hotspotRect.left + hotspotRect.width / 2;
+            const endY = hotspotRect.top + hotspotRect.height / 2;
+
+            flyIconBetweenPoints(iconPath, startX, startY, endX, endY);
         }
 
         function renderInventory() {
@@ -4280,7 +4461,7 @@
             playKeypadSound();
 
             if (!keypadCode) {
-                keypadDisplay.textContent = "ERROR";
+                keypadDisplay.textContent = currentLanguage === "hr" ? "GREŠKA" : "ERROR";
                 keypadDisplay.classList.add("error");
 
                 setTimeout(() => {
@@ -4327,7 +4508,7 @@
 
             document.getElementById("gameScreen").style.display = "none";
             document.getElementById("joinScreen").style.display = "flex";
-            document.getElementById("status").innerText = "You left the lobby.";
+            document.getElementById("status").innerText = trMsg("You left the lobby.");
         }
 
         function resetToJoinScreen(message) {
@@ -4360,7 +4541,7 @@
             document.getElementById("joinScreen").style.display = "flex";
 
             document.getElementById("status").innerText =
-                message || "You left the lobby.";
+                message || trMsg("You left the lobby.");
         }
 
         function escapeHtml(text) {

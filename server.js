@@ -3,6 +3,8 @@ const http = require("http");
 const { Server } = require("socket.io");
 const QRCode = require("qrcode");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 const { createLobby } = require("./game/lobby");
 const { ITEMS, DEFAULT_PICKUP_SOUND, getClientItems } = require("./game/items");
@@ -12,6 +14,95 @@ const { CHARACTERS, getClientCharacters } = require("./game/characters");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// ============================================================
+// GAME-COMPLETION LOGGING (for the developer's own stats only —
+// never shown to players)
+// ============================================================
+// Deliberately just a plain append-only file, not a database: one
+// small line gets written the moment a game actually finishes (not
+// during gameplay itself), so this adds essentially zero ongoing
+// server load. Reading/aggregating it only happens if someone visits
+// /admin/stats, which will be rare (just the developer, occasionally)
+// — the cost of computing stats is paid only on that request, never
+// during normal play.
+const LOG_DIR = path.join(__dirname, "data");
+const GAME_LOG_PATH = path.join(LOG_DIR, "completed-games.jsonl");
+
+try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+} catch (err) {
+    console.error("Could not create data directory for game logs:", err);
+}
+
+// One JSON object per line (JSONL) rather than one big JSON array —
+// appending a line is O(1) regardless of how large the file already
+// is, whereas appending to a JSON array means rewriting the whole
+// file every time. Trade-off: reading it back requires splitting on
+// newlines rather than a single JSON.parse, which is what
+// readCompletedGames() below does.
+function logCompletedGame(lobby, accusedId, accusedCharacter, isCorrect) {
+    const durationSeconds = lobby.gameStartedAt
+        ? Math.round((Date.now() - lobby.gameStartedAt) / 1000)
+        : null;
+
+    const entry = {
+        timestamp: new Date().toISOString(),
+        lobbyCode: lobby.code,
+        playerCount: lobby.players.length,
+        durationSeconds,
+        accusedCharacterId: accusedId,
+        accusedCharacterName: accusedCharacter?.name || accusedId,
+        result: isCorrect ? "good" : "bad"
+    };
+
+    // Fire-and-forget: a failed log write should never be able to
+    // break the actual game for players, so this only logs its own
+    // error to the console rather than throwing.
+    fs.appendFile(GAME_LOG_PATH, JSON.stringify(entry) + "\n", (err) => {
+        if (err) console.error("Failed to write game-completion log:", err);
+    });
+}
+
+function readCompletedGames() {
+    let raw;
+
+    try {
+        raw = fs.readFileSync(GAME_LOG_PATH, "utf8");
+    } catch (err) {
+        // File doesn't exist yet (no games finished so far) — not a
+        // real error, just means there's nothing to report yet.
+        return [];
+    }
+
+    return raw
+        .split("\n")
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => {
+            try {
+                return JSON.parse(line);
+            } catch (err) {
+                return null;
+            }
+        })
+        .filter(Boolean);
+}
+
+// A single secret key rather than a full login system — proportionate
+// for a stats page only the developer will ever look at. Set your own
+// via the ADMIN_KEY environment variable (e.g. in Render's dashboard
+// under Environment); if you don't set one, a random key is generated
+// each time the server starts and printed to the console/host logs so
+// you can still access it, but it'll change on every restart/redeploy
+// in that case — set your own for a stable link.
+const ADMIN_KEY = process.env.ADMIN_KEY || crypto.randomBytes(12).toString("hex");
+
+if (!process.env.ADMIN_KEY) {
+    console.log("No ADMIN_KEY environment variable set.");
+    console.log(`Generated a temporary one for this run: ${ADMIN_KEY}`);
+    console.log(`Stats page: /admin/stats?key=${ADMIN_KEY}`);
+}
 
 // While this game is under active development, HTML/JS files should
 // always be re-fetched fresh — otherwise updates on the server can
@@ -54,6 +145,183 @@ app.get("/api/game-data", (req, res) => {
         items: getClientItems()
     });
 });
+
+// Developer-only stats — never linked from anywhere in the game
+// itself, and gated behind ADMIN_KEY (see above). Aggregation only
+// happens here, on-demand, when this exact URL is visited — it costs
+// nothing during normal gameplay.
+app.get("/admin/stats", (req, res) => {
+    if (req.query.key !== ADMIN_KEY) {
+        res.status(401).send("Not authorized.");
+        return;
+    }
+
+    const games = readCompletedGames();
+    const totalGames = games.length;
+
+    const format = (req.query.format || "").toLowerCase();
+    if (format === "json") {
+        res.json({ totalGames, games });
+        return;
+    }
+
+    if (!totalGames) {
+        res.send(renderStatsPage({ totalGames: 0 }));
+        return;
+    }
+
+    const durations = games
+        .map(g => g.durationSeconds)
+        .filter(d => typeof d === "number" && d >= 0);
+
+    const avgDurationSeconds = durations.length
+        ? Math.round(durations.reduce((sum, d) => sum + d, 0) / durations.length)
+        : null;
+
+    const avgPlayerCount =
+        games.reduce((sum, g) => sum + (g.playerCount || 0), 0) / totalGames;
+
+    const correctCount = games.filter(g => g.result === "good").length;
+    const winRatePercent = Math.round((correctCount / totalGames) * 100);
+
+    // How often each character ended up being the one accused —
+    // whether that accusation was right or wrong, this counts every
+    // finished game's outcome once.
+    const characterCounts = {};
+    games.forEach(g => {
+        const name = g.accusedCharacterName || g.accusedCharacterId || "Unknown";
+        characterCounts[name] = (characterCounts[name] || 0) + 1;
+    });
+
+    const characterBreakdown = Object.entries(characterCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => ({
+            name,
+            count,
+            percent: Math.round((count / totalGames) * 100)
+        }));
+
+    res.send(renderStatsPage({
+        totalGames,
+        avgDurationSeconds,
+        avgPlayerCount,
+        winRatePercent,
+        characterBreakdown
+    }));
+});
+
+function formatDuration(totalSeconds) {
+    if (totalSeconds === null || totalSeconds === undefined) return "—";
+
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
+function renderStatsPage(stats) {
+    if (!stats.totalGames) {
+        return `<!DOCTYPE html>
+<html><head><title>Game Stats</title>
+<style>body{font-family:Arial,sans-serif;background:#181010;color:#f2e5c4;padding:40px;}</style>
+</head><body><h1>Game Stats</h1><p>No completed games logged yet.</p></body></html>`;
+    }
+
+    const rows = stats.characterBreakdown.map(row => `
+        <tr>
+            <td>${row.name}</td>
+            <td>${row.count}</td>
+            <td>${row.percent}%</td>
+        </tr>
+    `).join("");
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+    <title>Game Stats</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #181010;
+            color: #f2e5c4;
+            padding: 40px;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+        h1 { margin-bottom: 4px; }
+        .subtitle { opacity: 0.7; margin-bottom: 30px; }
+        .statGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 36px;
+        }
+        .statBox {
+            border: 1px solid #b58c5a;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .statBox .label {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.7;
+        }
+        .statBox .value {
+            font-size: 28px;
+            margin-top: 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(181, 140, 90, 0.35);
+        }
+        th {
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 1px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <h1>Game Stats</h1>
+    <div class="subtitle">${stats.totalGames} completed game${stats.totalGames === 1 ? "" : "s"} logged</div>
+
+    <div class="statGrid">
+        <div class="statBox">
+            <div class="label">Average duration</div>
+            <div class="value">${formatDuration(stats.avgDurationSeconds)}</div>
+        </div>
+        <div class="statBox">
+            <div class="label">Average players per game</div>
+            <div class="value">${stats.avgPlayerCount.toFixed(1)}</div>
+        </div>
+        <div class="statBox">
+            <div class="label">Win rate (correct accusation)</div>
+            <div class="value">${stats.winRatePercent}%</div>
+        </div>
+        <div class="statBox">
+            <div class="label">Total games</div>
+            <div class="value">${stats.totalGames}</div>
+        </div>
+    </div>
+
+    <h2>Who ended up accused</h2>
+    <table>
+        <thead>
+            <tr><th>Character</th><th>Times accused</th><th>% of games</th></tr>
+        </thead>
+        <tbody>
+            ${rows}
+        </tbody>
+    </table>
+</body>
+</html>`;
+}
 
 const lobbies = {};
 
@@ -287,6 +555,8 @@ function checkAccusationComplete(lobby) {
     lobby.endingBackgroundImage = isCorrect
         ? accusedCharacter?.goodEndingImage
         : accusedCharacter?.badEndingImage;
+
+    logCompletedGame(lobby, accusedId, accusedCharacter, isCorrect);
 
     // The ending narrative is exactly the kind of spoiler content kept
     // out of getClientCharacters() all game — so unlike most lobby
@@ -781,7 +1051,15 @@ io.on("connection", (socket) => {
         sendPrivateInventoryToPlayer(giver);
         sendPrivateInventoryToPlayer(receiver);
 
-        socket.emit("gameMessage", `You gave ${receiver.name} the ${item.name}.`);
+        // Structured, not a pre-built English sentence — lets the
+        // giver's own client build this in whichever language it has
+        // selected (see socket.on("itemGiven") in phone/index.html),
+        // same reasoning as itemReceived just below.
+        socket.emit("itemGiven", {
+            toName: receiver.name,
+            itemId: item.id,
+            itemName: item.name
+        });
         socket.emit("itemRemoved", { sound: DEFAULT_PICKUP_SOUND });
 
         if (receiver.socketId) {
@@ -1638,6 +1916,8 @@ io.on("connection", (socket) => {
     });
 });
 
-server.listen(3000, () => {
-    console.log("Server running on http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });

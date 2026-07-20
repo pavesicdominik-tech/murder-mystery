@@ -25,28 +25,32 @@
         }
 
         #mapWrap {
-            position: absolute;
-            inset: 0;
+            position: relative;
             width: 100%;
-            height: 100%;
+            /* No height set on purpose — this box shrink-wraps to
+               whatever height #mapImage actually renders at (see
+               below), so player markers positioned as a % of THIS
+               box (in drawPlayers()) always land on the correct spot
+               on the image itself, at any screen size. */
         }
 
         #mapImage {
             width: 100%;
-            height: 100%;
             /*
-                object-fit: fill stretches the image to exactly match
-                mapWrap's box, ignoring the photo's native aspect ratio.
-                This is intentional (stretched map, edge to edge) —
-                unlike the phone's room hotspots, player markers here
-                are simple named labels rather than pixel-precise photo
-                hotspots, so a little distortion doesn't cause the same
-                "drift" problem. Every marker is positioned as a % of
-                THIS SAME mapWrap box (see drawPlayers() below), so
-                they automatically track the stretch — no extra math
-                needed.
+                height: auto (rather than the old height: 100% +
+                object-fit: fill) means the map now scales to fit the
+                screen's WIDTH only, keeping its own native aspect
+                ratio rather than being stretched vertically to fill
+                the screen. On a screen taller than the map's own
+                ratio, that leaves empty space above/below rather than
+                a distorted image — #mapScreen's flex centering (see
+                below) keeps it vertically centered in that space.
+                Every marker is positioned as a % of #mapWrap, which
+                shrink-wraps to match this image's actual rendered
+                size, so markers automatically track this scaling with
+                no extra math needed.
             */
-            object-fit: fill;
+            height: auto;
             display: block;
         }
 

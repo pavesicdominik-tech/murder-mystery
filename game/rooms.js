@@ -189,9 +189,9 @@ const ROOMS = {
         // Placeholder position — move this to match your mansion-map.png.
         mapZone: { x: 70, y: 55 },
         doors: [
-            { target: "son-bedroom", label: "Son's Bedroom", labelHr: "Sinova soba", left: "42%", top: "20%", width: "16%", height: "40%" },
-            { target: "library", label: "Library", labelHr: "Knjižnica", left: "8%", top: "35%", width: "16%", height: "32%" },
-            { target: "lobby", label: "Lobby", labelHr: "Predvorje", left: "76%", top: "35%", width: "16%", height: "32%" }
+            { target: "son-bedroom", label: "Son's Bedroom", labelHr: "Sinova soba", left: "22%", top: "24%", width: "13%", height: "62%", invisible: true },
+            { target: "library", label: "Library", labelHr: "Knjižnica", left: "86%", top: "35%", width: "9%", height: "24%", invisible: true },
+            { target: "lobby", label: "Lobby", labelHr: "Predvorje", left: "80%", top: "66%", width: "20%", height: "32%", invisible: true }
         ],
         characterHotspots: [
             { characterId: "son", left: "58%", top: "20%", width: "13%", height: "55%" }
@@ -336,10 +336,10 @@ const ROOMS = {
         // Placeholder position — move this to match your mansion-map.png.
         mapZone: { x: 16, y: 17 },
         doors: [
-            { target: "kitchen", label: "Kitchen", left: "8%", top: "35%", width: "18%", height: "32%" }
+            { target: "kitchen", label: "Kitchen", left: "13%", top: "38%", width: "9%", height: "30%", invisible: true }
         ],
         characterHotspots: [
-            { characterId: "mysterious-person", left: "55%", top: "25%", width: "14%", height: "55%" }
+            { characterId: "mysterious-person", left: "48%", top: "38%", width: "15%", height: "54%" }
         ]
     }
 

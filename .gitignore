@@ -1,0 +1,5 @@
+node_modules/
+
+# Game-completion logs (see server.js) — player-generated data,
+# shouldn't be committed to version control.
+data/

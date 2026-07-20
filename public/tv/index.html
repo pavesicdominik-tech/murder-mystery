@@ -33,6 +33,45 @@
             z-index: 10;
         }
 
+        /* Icons only, top-left — this page (lobby creation) is the
+           only TV screen with a language toggle at all. Once "Start
+           Game" fires, the TV navigates away to tv/intro.html and
+           tv/game.html, which always stay in English regardless of
+           what was picked here — this choice is purely a convenience
+           for the host while setting up, stored in this TV browser's
+           own localStorage under a separate key from the phone's, so
+           testing both roles in the same browser doesn't collide. */
+        #tvLanguagePicker {
+            position: absolute;
+            top: 22px;
+            left: 22px;
+            z-index: 10;
+            display: flex;
+            gap: 8px;
+        }
+
+        .tvLanguageButton {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.30);
+            cursor: pointer;
+        }
+
+        .tvLanguageButton.active {
+            border-color: #f0c65d;
+            box-shadow: 0 0 0 1px #f0c65d inset;
+        }
+
+        .tvLanguageButton img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+
         .top-menu button {
             padding: 8px 14px;
             border: 1px solid rgba(255, 255, 255, 0.28);
@@ -203,18 +242,27 @@
 
 <body>
     <nav class="top-menu">
-        <button type="button" onclick="showMessage('How to play will be added soon.')">How to play</button>
-        <button type="button" onclick="showMessage('About will be added soon.')">About</button>
-        <button type="button" onclick="showMessage('Contact will be added soon.')">Contact</button>
+        <button type="button" id="navHowToPlay" onclick="showMessage(tvMsg('How to play will be added soon.'))">How to play</button>
+        <button type="button" id="navAbout" onclick="showMessage(tvMsg('About will be added soon.'))">About</button>
+        <button type="button" id="navContact" onclick="showMessage(tvMsg('Contact will be added soon.'))">Contact</button>
     </nav>
+
+    <div id="tvLanguagePicker">
+        <button type="button" class="tvLanguageButton" id="tvLanguageButtonEn" onclick="setTvLanguage('en')">
+            <img src="/images/engico.png" alt="English">
+        </button>
+        <button type="button" class="tvLanguageButton" id="tvLanguageButtonHr" onclick="setTvLanguage('hr')">
+            <img src="/images/croico.png" alt="Hrvatski">
+        </button>
+    </div>
 
     <div id="messageBox"></div>
 
     <button id="muteButton" type="button" onclick="toggleMute()" aria-label="Toggle sound"></button>
 
     <main class="main">
-        <h1>Murder Mystery</h1>
-        <div class="subtitle">Couch game for friends and family.</div>
+        <h1 id="mainTitle">Murder Mystery</h1>
+        <div class="subtitle" id="mainSubtitle">Couch game for friends and family.</div>
 
         <div class="game-buttons">
             <button id="createButton" onclick="createGame()">Create Game</button>
@@ -233,6 +281,77 @@
 
         let currentLobby = null;
         let audioStarted = false;
+
+        // Local to this TV browser only, and only affects THIS page
+        // (lobby creation) — separate key from the phone's
+        // localStorage language choice, and separate concept entirely
+        // from tv/intro.html or tv/game.html, which always stay in
+        // English once the game actually starts.
+        let tvLanguage = localStorage.getItem("tvLanguage") === "hr" ? "hr" : "en";
+
+        const TV_UI_HR = {
+            howToPlay: "Kako igrati",
+            about: "O igri",
+            contact: "Kontakt",
+            gameTitle: "Ubojstvo Misterija",
+            gameSubtitle: "Kauč igra za obitelj i prijatelje.",
+            createGame: "Stvori igru",
+            startGame: "Pokreni igru",
+            createToBegin: "Stvori igru za početak.",
+            lobbyCode: "Kod sobe:",
+            players: "Igrači",
+            noPlayersJoined: "Još se nitko nije pridružio.",
+            removeButton: "Ukloni",
+            offline: "(offline)"
+        };
+
+        const TV_MESSAGE_HR = {
+            "How to play will be added soon.": "Upute za igranje uskoro stižu.",
+            "About will be added soon.": "Informacije o igri uskoro stižu.",
+            "Contact will be added soon.": "Podaci za kontakt uskoro stižu.",
+            "Too many lobbies created. Please wait 30 seconds.": "Previše stvorenih soba. Pričekaj 30 sekundi.",
+            "TV session was not initialized.": "TV sesija nije pokrenuta.",
+            "At least one player must join before starting.": "Barem jedan igrač mora pristupiti prije početka.",
+            "Game no longer exists.": "Igra više ne postoji."
+        };
+
+        function tvUI(key) {
+            if (tvLanguage === "hr" && TV_UI_HR[key]) return TV_UI_HR[key];
+            return null;
+        }
+
+        function tvMsg(text) {
+            if (tvLanguage !== "hr") return text;
+            return TV_MESSAGE_HR[text] || text;
+        }
+
+        function setTvLanguage(lang) {
+            tvLanguage = (lang === "hr") ? "hr" : "en";
+            localStorage.setItem("tvLanguage", tvLanguage);
+            applyTvLanguage();
+        }
+
+        function applyTvLanguage() {
+            document.getElementById("tvLanguageButtonEn").classList.toggle("active", tvLanguage === "en");
+            document.getElementById("tvLanguageButtonHr").classList.toggle("active", tvLanguage === "hr");
+
+            document.getElementById("navHowToPlay").textContent = tvUI("howToPlay") || "How to play";
+            document.getElementById("navAbout").textContent = tvUI("about") || "About";
+            document.getElementById("navContact").textContent = tvUI("contact") || "Contact";
+            document.getElementById("mainTitle").textContent = tvUI("gameTitle") || "Murder Mystery";
+            document.getElementById("mainSubtitle").textContent = tvUI("gameSubtitle") || "Couch game for friends and family.";
+            document.getElementById("createButton").textContent = tvUI("createGame") || "Create Game";
+            document.getElementById("startButton").textContent = tvUI("startGame") || "Start Game";
+
+            // Only overwrite the status line with the idle default if
+            // a lobby hasn't been created yet — once it has,
+            // renderLobby() below owns that element instead.
+            if (!currentLobby) {
+                document.getElementById("status").textContent = tvUI("createToBegin") || "Create a game to begin.";
+            } else {
+                renderLobby(currentLobby);
+            }
+        }
 
         let tvSessionId = localStorage.getItem("tvSessionId");
 
@@ -322,7 +441,7 @@
         });
 
         socket.on("lobbyError", (message) => {
-            showMessage(message);
+            showMessage(tvMsg(message));
         });
 
         function showMessage(message) {
@@ -340,23 +459,30 @@
                 ? `<br><img src="${lobby.qr}" width="190" alt="Join QR code">`
                 : "";
 
+            const lobbyCodeLabel = tvUI("lobbyCode") || "Lobby code:";
+
             document.getElementById("status").innerHTML =
-                `Lobby code: <strong>${lobby.code}</strong>${qrHtml}`;
+                `${lobbyCodeLabel} <strong>${lobby.code}</strong>${qrHtml}`;
+
+            const offlineLabel = tvUI("offline") || "(offline)";
+            const removeLabel = tvUI("removeButton") || "Remove";
 
             const playersHtml = lobby.players.length
                 ? lobby.players.map((player) => `
                     <div class="player ${player.connected ? "" : "offline"}">
                         <span>
                             ${escapeHtml(player.name)}
-                            ${player.connected ? "" : " (offline)"}
+                            ${player.connected ? "" : " " + offlineLabel}
                         </span>
-                        <button onclick="kickPlayer('${player.token}')">Remove</button>
+                        <button onclick="kickPlayer('${player.token}')">${removeLabel}</button>
                     </div>
                 `).join("")
-                : "<p>No players have joined yet.</p>";
+                : `<p>${tvUI("noPlayersJoined") || "No players have joined yet."}</p>`;
+
+            const playersLabel = tvUI("players") || "Players";
 
             document.getElementById("lobbyInfo").innerHTML = `
-                <h3>Players (${lobby.players.length}/${lobby.maxPlayers})</h3>
+                <h3>${playersLabel} (${lobby.players.length}/${lobby.maxPlayers})</h3>
                 ${playersHtml}
             `;
         }
@@ -366,6 +492,8 @@
             element.textContent = text;
             return element.innerHTML;
         }
+
+        applyTvLanguage();
     </script>
 </body>
 </html>

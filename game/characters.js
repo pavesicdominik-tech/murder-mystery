@@ -115,8 +115,8 @@ const CHARACTERS = {
 
     cook: {
         id: "cook",
-        name: "Mrs. Ardell, the Cook",
-        nameHr: "Gospođa Ardell, kuharica",
+        name: "Mr. Thomas Ardell, the Cook",
+        nameHr: "Gospodin Thomas Ardell, kuhar",
         roomSprite: "/images/characters/cook-room.png",
         closeupImage: "/images/characters/cook-closeup.png",
 
@@ -154,7 +154,7 @@ const CHARACTERS = {
             {
                 id: "victim-relation",
                 question: "Kakav je bio vaš odnos sa žrtvom?",
-                answer: "\"Hranila sam tog čovjeka petnaest godina. Nemojte u tome tražiti ništa posebno.\""
+                answer: "\"Hranio sam tog čovjeka petnaest godina. Nemojte u tome tražiti ništa posebno.\""
             },
             {
                 id: "suspicions",
@@ -176,12 +176,12 @@ const CHARACTERS = {
         },
         knifeQuestionHr: {
             question: "Zašto je ovaj nož krvav?",
-            answer: "\"Oh, to? Pripremala sam odrezak za gospodara ranije večeras. Ništa zlokobnije od večere, uvjeravam vas.\""
+            answer: "\"Oh, to? Pripremao sam odrezak za gospodara ranije večeras. Ništa zlokobnije od večere, uvjeravam vas.\""
         },
 
         goodEndingImage: "/images/endings/good-ending.png",
-        goodEndingText: "The final piece falls into place. Mrs. Ardell had been dosing the master's nightly tea for weeks — a slow, deliberate cruelty born of a secret affair with his own wife, and the fortune that would follow his death. Confronted with the truth, she does not deny it. Justice, at last, is served.",
-        goodEndingTextHr: "Zadnji dio slagalice sjeda na svoje mjesto. Gospođa Ardell je tjednima trovala gospodarov večernji čaj — spora, smišljena okrutnost rođena iz tajne veze s njegovom vlastitom ženom, i bogatstva koje bi uslijedilo nakon njegove smrti. Suočena s istinom, ne poriče. Pravda je, napokon, zadovoljena."
+        goodEndingText: "The final piece falls into place. Mr. Ardell had been dosing the master's nightly tea for weeks — a slow, deliberate cruelty born of a secret affair with the master's wife, and the fortune that would follow his death. Confronted with the truth, he does not deny it. Justice, at last, is served.",
+        goodEndingTextHr: "Zadnji dio slagalice sjeda na svoje mjesto. Gospodin Ardell je tjednima trovao gospodarov večernji čaj — spora, smišljena okrutnost rođena iz tajne veze s gospodarovom suprugom, i bogatstva koje bi uslijedilo nakon njegove smrti. Suočen s istinom, ne poriče. Pravda je, napokon, zadovoljena."
     },
 
     maid: {
