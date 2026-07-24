@@ -206,11 +206,11 @@ const ROOMS = {
         // Placeholder position — move this to match your mansion-map.png.
         mapZone: { x: 38, y: 21 },
         doors: [
-            { target: "hallway", label: "Hallway", left: "91%", top: "18%", width: "9%", height: "69%", invisible: true }
+            { target: "hallway", label: "Hallway", left: "87%", top: "18%", width: "11%", height: "57%", invisible: true }
         ],
 
         itemHotspots: [
-            { placementId: "son-bedroom-wrinkled-note", label: "Take note", left: "46%", top: "76%", width: "8%", height: "12%", iconHotspot: true }
+            { placementId: "son-bedroom-wrinkled-note", label: "Take note", left: "74%", top: "50%", width: "3%", height: "5%", iconHotspot: true }
         ],
 
         // Bespoke — not a generic itemHotspot or characterHotspot, since
@@ -223,10 +223,10 @@ const ROOMS = {
         // player.
         catHotspot: {
             image: "/images/props/cat.png",
-            left: "15%",
-            top: "54%",
-            width: "12%",
-            height: "14%",
+            left: "40%",
+            top: "61%",
+            width: "8%",
+            height: "13%",
             maxClicks: 5,
             sound: "/sounds/meow.mp3",
             finalSound: "/sounds/hiss.mp3"
@@ -244,10 +244,10 @@ const ROOMS = {
             // Was "Hallway"; now leads directly to the Lobby instead
             // (matches lobby.doors above, which now has a direct door
             // here too).
-            { target: "lobby", label: "Lobby", left: "90%", top: "18%", width: "12%", height: "78%", invisible: true }
+            { target: "lobby", label: "Lobby", left: "85%", top: "18%", width: "12%", height: "57%", invisible: true }
         ],
         itemHotspots: [
-            { placementId: "powder-room-glass-of-water", label: "Take glass of water", left: "62%", top: "60%", width: "9%", height: "14%", iconHotspot: true }
+            { placementId: "powder-room-glass-of-water", label: "Take glass of water", left: "17%", top: "52%", width: "5%", height: "7%", iconHotspot: true }
         ],
         characterHotspots: [
             { characterId: "wife", left: "49%", top: "27%", width: "13%", height: "74%" }

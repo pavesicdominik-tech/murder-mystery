@@ -38,6 +38,27 @@
 // to them (see the mysterious-person entry below). server.js's
 // interactWithCharacter handler checks this and simply never adds
 // them to lobby.interactedCharacters.
+//
+// ============================================================
+// EXTRA (HIDDEN) QUESTIONS
+// ============================================================
+// Several characters below have one or two extra questions beyond
+// their standard three — these only appear once a specific "unlock"
+// condition has happened *somewhere* in the lobby (not necessarily to
+// the asking player themselves — this game's suspect list/safe
+// question/knife question all already work the same cooperative way:
+// once anyone on the team makes progress, everyone benefits from it).
+// Each extra question is kept OUT of getClientCharacters()'s
+// whitelist, same reasoning as knifeQuestion/safeQuestion below — the
+// answer is only ever delivered through its own dedicated server.js
+// event, once the unlock condition is actually met, so it can't be
+// read early via devtools/network tab.
+//
+// A couple of these also have a SECOND possible answer depending on
+// whether the specific asking player currently holds a particular
+// item — same mechanic as the Cook's existing knifeQuestion, just
+// applied to a new set of questions. server.js picks which variant to
+// send at the moment of asking; the client never receives both.
 // ============================================================
 
 const CHARACTERS = {
@@ -45,12 +66,7 @@ const CHARACTERS = {
         id: "butler",
         name: "Mr. Higgins, the Butler",
         nameHr: "Gospodin Higgins, batler",
-
-        // The small image standing in the room, tappable to open the
-        // dialogue popup. Positioned per-room in game/rooms.js.
         roomSprite: "/images/characters/butler-room.png",
-
-        // The bigger portrait shown once the dialogue popup is open.
         closeupImage: "/images/characters/butler-closeup.png",
 
         introLine: "\"I've served this house for thirty years. Ask what you must, but be quick about it.\"",
@@ -60,17 +76,17 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Where were you last night?",
-                answer: "\"In the kitchen, polishing the silver until well past midnight. The cook can vouch for me.\""
+                answer: "\"I was serving tea to the master when I heard a loud noise in the hallway. I found him downstairs. I tried to help, but it was too late.\""
             },
             {
                 id: "victim-relation",
-                question: "What was your relation to the victim?",
-                answer: "\"I served him breakfast every morning for a decade. He always took his tea black, no sugar.\""
+                question: "What was your relationship with the victim?",
+                answer: "\"I was loyal to the master. He always treated me with respect.\""
             },
             {
                 id: "suspicions",
-                question: "Do you suspect anyone in this house?",
-                answer: "\"I couldn't possibly say. But the family has always kept... complicated company.\""
+                question: "Did anything unusual happen last night?",
+                answer: "\"The master insisted on dining alone. I assume he and the missus had an argument.\""
             }
         ],
 
@@ -78,27 +94,23 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Gdje ste bili sinoć?",
-                answer: "\"U kuhinji, glancao sam srebrninu do duboko iza ponoći. Kuharica to može potvrditi.\""
+                answer: "\"Posluživao sam gospodaru čaj kad sam začuo glasan zvuk u hodniku. Pronašao sam ga dolje. Pokušao sam pomoći, ali bilo je prekasno.\""
             },
             {
                 id: "victim-relation",
                 question: "Kakav je bio vaš odnos sa žrtvom?",
-                answer: "\"Posluživao sam mu doručak svako jutro deset godina. Uvijek je pio čaj crn, bez šećera.\""
+                answer: "\"Bio sam odan gospodaru. Uvijek me tretirao s poštovanjem.\""
             },
             {
                 id: "suspicions",
-                question: "Sumnjate li na nekoga u ovoj kući?",
-                answer: "\"Ne bih to mogao reći. Ali obitelj je oduvijek imala... složeno društvo.\""
+                question: "Je li se sinoć dogodilo nešto neobično?",
+                answer: "\"Gospodar je inzistirao da večera sam. Pretpostavljam da su se on i gospođa posvađali.\""
             }
         ],
 
-        // Unlocked lobby-wide (for every player, not just whoever found
-        // it) the moment the safe is discovered — i.e. once the
-        // basement picture has been moved aside, reusing
-        // lobby.basementPictureMoved rather than a new flag. Kept out
-        // of getClientCharacters() below like the Cook's knifeQuestion,
-        // so the answer is only ever delivered through the dedicated
-        // askButlerAboutSafe round trip.
+        // Unlocked lobby-wide the moment the safe is discovered — i.e.
+        // once the basement boxes have been moved aside, reusing
+        // lobby.basementPictureMoved rather than a new flag.
         safeQuestion: {
             question: "What do you know about the safe?",
             answer: "\"The safe? That would be the master's. I imagine he kept his important documents in there. I don't know the combination myself, but... he always did like to set his numbers to something easy to remember.\""
@@ -131,17 +143,17 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Where were you last night?",
-                answer: "\"Right here, same as always. Ask the butler, he was in and out all evening.\""
+                answer: "\"I was in the kitchen, preparing the master's dinner.\""
             },
             {
                 id: "victim-relation",
-                question: "What was your relation to the victim?",
-                answer: "\"I fed the man for fifteen years. Don't read anything into that.\""
+                question: "What was your relationship with the victim?",
+                answer: "\"I only cooked for him and his family. Mrs. Ashworth usually tells me what to prepare for their meals.\""
             },
             {
                 id: "suspicions",
-                question: "Do you suspect anyone in this house?",
-                answer: "\"I keep to my kitchen. Whatever happens in the rest of this house is none of my concern.\""
+                question: "Did anything unusual happen last night?",
+                answer: "\"I heard the maid crying before dinner.\""
             }
         ],
 
@@ -149,27 +161,22 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Gdje ste bili sinoć?",
-                answer: "\"Ovdje, kao i uvijek. Pitajte batlera, cijelu je večer ulazio i izlazio.\""
+                answer: "\"Bio sam u kuhinji, pripremao sam gospodarovu večeru.\""
             },
             {
                 id: "victim-relation",
                 question: "Kakav je bio vaš odnos sa žrtvom?",
-                answer: "\"Hranio sam tog čovjeka petnaest godina. Nemojte u tome tražiti ništa posebno.\""
+                answer: "\"Kuhao sam samo za njega i njegovu obitelj. Gospođa Ashworth mi obično kaže što da pripremim za njihove obroke.\""
             },
             {
                 id: "suspicions",
-                question: "Sumnjate li na nekoga u ovoj kući?",
-                answer: "\"Ja se držim svoje kuhinje. Što god se događa u ostatku kuće, mene se ne tiče.\""
+                question: "Je li se sinoć dogodilo nešto neobično?",
+                answer: "\"Čuo sam sobaricu kako plače prije večere.\""
             }
         ],
 
         // Only askable by a player who currently has the Kitchen Knife
-        // in their inventory (see #cookKnifeQuestion in
-        // phone/index.html and askCookAboutKnife in server.js).
-        // Intentionally left out of getClientCharacters() below, same
-        // reasoning as the Mysterious Person's revealedQuestions — the
-        // answer is only ever delivered through that dedicated event,
-        // not the general character data available all game.
+        // in their inventory.
         knifeQuestion: {
             question: "Why is this knife bloody?",
             answer: "\"Oh, that? I prepared a steak for the master earlier tonight. Nothing more sinister than supper, I assure you.\""
@@ -177,6 +184,32 @@ const CHARACTERS = {
         knifeQuestionHr: {
             question: "Zašto je ovaj nož krvav?",
             answer: "\"Oh, to? Pripremao sam odrezak za gospodara ranije večeras. Ništa zlokobnije od večere, uvjeravam vas.\""
+        },
+
+        // Unlocked lobby-wide once anyone has given the Mysterious
+        // Person the skull (see lobby.skullGivenBy in server.js) —
+        // "talking to" him only really becomes a conversation once
+        // he's actually revealed something, which requires the skull.
+        backyardWatcherQuestion: {
+            question: "Did you see anyone going into the backyard?",
+            answer: "\"I was in the kitchen all night. I didn't see anyone go into the backyard.\""
+        },
+        backyardWatcherQuestionHr: {
+            question: "Jeste li vidjeli nekoga kako ulazi u dvorište?",
+            answer: "\"Bio sam u kuhinji cijelu noć. Nisam vidio nikoga da ulazi u dvorište.\""
+        },
+
+        // Unlocked lobby-wide once the Wife has confessed (to anyone)
+        // that she was in the backyard with the cook — see
+        // lobby.wifeConfessedAboutCook, set in server.js the moment
+        // that confession is actually given.
+        wifeInBackyardQuestion: {
+            question: "What were you doing in the backyard with Mrs. Ashworth?",
+            answer: "\"We just talked, as we usually do. Mr. Ashworth didn't treat her right. She deserves a better husband.\""
+        },
+        wifeInBackyardQuestionHr: {
+            question: "Što ste radili u dvorištu s gospođom Ashworth?",
+            answer: "\"Samo smo razgovarali, kao i inače. Gospodin Ashworth se nije lijepo ponašao prema njoj. Zaslužuje boljeg muža.\""
         },
 
         goodEndingImage: "/images/endings/good-ending.png",
@@ -197,17 +230,17 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Where were you last night?",
-                answer: "\"Turning down beds upstairs, same as every night.\""
+                answer: "\"I was dusting the library.\""
             },
             {
                 id: "victim-relation",
-                question: "What was your relation to the victim?",
-                answer: "\"I cleaned his room. That's all. He barely knew my name.\""
+                question: "What was your relationship with the victim?",
+                answer: "\"I had only been working for him for a couple of weeks. I didn't know him very well.\""
             },
             {
                 id: "suspicions",
-                question: "Do you suspect anyone in this house?",
-                answer: "\"The cook's been odd lately. Quieter than usual. Make of that what you will.\""
+                question: "Did anything unusual happen last night?",
+                answer: "\"After dinner, he lay down and said he wasn't feeling well.\""
             }
         ],
 
@@ -215,19 +248,29 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Gdje ste bili sinoć?",
-                answer: "\"Namještala sam krevete na katu, kao i svake večeri.\""
+                answer: "\"Brisala sam prašinu u knjižnici.\""
             },
             {
                 id: "victim-relation",
                 question: "Kakav je bio vaš odnos sa žrtvom?",
-                answer: "\"Čistila sam njegovu sobu. To je sve. Jedva je znao moje ime.\""
+                answer: "\"Radila sam za njega tek nekoliko tjedana. Nisam ga dobro poznavala.\""
             },
             {
                 id: "suspicions",
-                question: "Sumnjate li na nekoga u ovoj kući?",
-                answer: "\"Kuharica je u zadnje vrijeme čudna. Tiša nego inače. Zaključite sami što to znači.\""
+                question: "Je li se sinoć dogodilo nešto neobično?",
+                answer: "\"Nakon večere je legao i rekao da se ne osjeća dobro.\""
             }
         ],
+
+        // Unlocked lobby-wide once anyone has talked to the Cook.
+        cryingQuestion: {
+            question: "Why were you crying last night?",
+            answer: "\"The master told me he was going to fire me. Apparently, he wasn't satisfied with how well I'd been cleaning the rooms.\""
+        },
+        cryingQuestionHr: {
+            question: "Zašto ste sinoć plakali?",
+            answer: "\"Gospodar mi je rekao da će me otpustiti. Očito nije bio zadovoljan koliko dobro čistim sobe.\""
+        },
 
         badEndingImage: "/images/endings/maid-ending.png",
         badEndingText: "Eliza weeps as she is dragged from the manor, insisting again and again that she touched nothing but linens and dust. No one believes her. Somewhere in the house, the real murderer breathes a quiet sigh of relief.",
@@ -240,24 +283,24 @@ const CHARACTERS = {
         nameHr: "Gospođa Eleanor Ashworth, supruga",
         roomSprite: "/images/characters/wife-room.png",
         closeupImage: "/images/characters/wife-closeup.png",
-        introLine: "\"I've buried my husband and now I must entertain questions? Ask them, then, and be done.\"",
-        introLineHr: "\"Pokopala sam muža, a sada moram odgovarati na pitanja? Onda pitajte, i završimo s tim.\"",
+        introLine: "\"I just needed to freshen up, this was a terrible accident.\"",
+        introLineHr: "\"Samo sam se trebala osvježiti, ovo je bila užasna nesreća.\"",
 
         questions: [
             {
                 id: "alibi",
                 question: "Where were you last night?",
-                answer: "\"In my room, alone, nursing a headache. No one can vouch for me, if that's what you're really asking.\""
+                answer: "\"I was in the backyard. I needed some time alone.\""
             },
             {
                 id: "victim-relation",
-                question: "What was your relation to the victim?",
-                answer: "\"He was my husband of twenty years. Whatever you think you know about this marriage, you know nothing.\""
+                question: "What was your relationship with the victim?",
+                answer: "\"He was my husband. The spark between us had long faded, but I would never wish him any harm.\""
             },
             {
                 id: "suspicions",
-                question: "Do you suspect anyone in this house?",
-                answer: "\"This house has always run on secrets. I'd start with whoever handled his food and drink.\""
+                question: "Did anything unusual happen last night?",
+                answer: "\"My husband stormed out of our son's bedroom, looking furious.\""
             }
         ],
 
@@ -265,19 +308,44 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Gdje ste bili sinoć?",
-                answer: "\"U svojoj sobi, sama, s glavoboljom. Nitko me ne može potvrditi, ako je to ono što zapravo pitate.\""
+                answer: "\"Bila sam u dvorištu. Trebala sam malo vremena za sebe.\""
             },
             {
                 id: "victim-relation",
                 question: "Kakav je bio vaš odnos sa žrtvom?",
-                answer: "\"Bio je moj muž dvadeset godina. Što god mislite da znate o ovom braku, ne znate ništa.\""
+                answer: "\"Bio je moj muž. Iskra među nama odavno je izblijedjela, ali nikad mu ne bih poželjela zlo.\""
             },
             {
                 id: "suspicions",
-                question: "Sumnjate li na nekoga u ovoj kući?",
-                answer: "\"Ova je kuća oduvijek živjela od tajni. Ja bih počela s onim tko je pripremao njegovu hranu i piće.\""
+                question: "Je li se sinoć dogodilo nešto neobično?",
+                answer: "\"Moj muž je izjurio iz sinove sobe, izgledao je bijesno.\""
             }
         ],
+
+        // Unlocked lobby-wide once anyone has talked to the Butler.
+        argumentQuestion: {
+            question: "What did you argue about with your husband?",
+            answer: "\"He mentioned divorce. I didn't agree with it.\""
+        },
+        argumentQuestionHr: {
+            question: "Oko čega ste se posvađali sa suprugom?",
+            answer: "\"Spomenuo je razvod. Nisam se s time slagala.\""
+        },
+
+        // Unlocked lobby-wide once anyone has given the Mysterious
+        // Person the skull. The answer itself has two variants — see
+        // askWifeAboutBackyard in server.js, which checks whether the
+        // ASKING player currently holds the Burned Note.
+        backyardCompanionQuestion: {
+            question: "Who were you with in the backyard?",
+            answer: "\"M-Me? No one. I told you, I was alone.\""
+        },
+        backyardCompanionQuestionHr: {
+            question: "S kim ste bili u dvorištu?",
+            answer: "\"J-Ja? Nitko. Rekla sam vam, bila sam sama.\""
+        },
+        backyardCompanionConfession: "\"Fine, I was with the cook, talking. At least he listens and understands me.\"",
+        backyardCompanionConfessionHr: "\"Dobro, bila sam s kuharom, razgovarali smo. Barem me on sluša i razumije.\"",
 
         badEndingImage: "/images/endings/wife-ending.png",
         badEndingText: "Mrs. Ashworth is stunned into silence as the accusation lands. Whatever grief she carried for her husband curdles into fury as she's led away. The true killer remains in the house, free to pour another cup of poisoned tea.",
@@ -297,17 +365,17 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Where were you last night?",
-                answer: "\"Out. Does it matter where? I wasn't here, and I certainly wasn't in the kitchen.\""
+                answer: "\"In my room, reading.\""
             },
             {
                 id: "victim-relation",
-                question: "What was your relation to the victim?",
-                answer: "\"He was my father. We didn't agree on much, especially not money, but he was still my father.\""
+                question: "What was your relationship with the victim?",
+                answer: "\"He was a difficult man, but he was still my father.\""
             },
             {
                 id: "suspicions",
-                question: "Do you suspect anyone in this house?",
-                answer: "\"Everyone in this house had a reason to want him gone. Myself included, if we're being honest.\""
+                question: "Did anything unusual happen last night?",
+                answer: "\"I heard a noise outside my room. When I looked, I saw my father lying downstairs with the butler beside him.\""
             }
         ],
 
@@ -315,19 +383,34 @@ const CHARACTERS = {
             {
                 id: "alibi",
                 question: "Gdje ste bili sinoć?",
-                answer: "\"Vani. Je li bitno gdje? Nisam bio ovdje, a sigurno nisam bio u kuhinji.\""
+                answer: "\"U svojoj sobi, čitao sam.\""
             },
             {
                 id: "victim-relation",
                 question: "Kakav je bio vaš odnos sa žrtvom?",
-                answer: "\"Bio je moj otac. Nismo se slagali oko mnogo toga, pogotovo ne oko novca, ali ipak mi je bio otac.\""
+                answer: "\"Bio je težak čovjek, ali ipak mi je bio otac.\""
             },
             {
                 id: "suspicions",
-                question: "Sumnjate li na nekoga u ovoj kući?",
-                answer: "\"Svatko u ovoj kući imao je razlog željeti da nestane. Uključujući i mene, ako smo iskreni.\""
+                question: "Je li se sinoć dogodilo nešto neobično?",
+                answer: "\"Čuo sam buku ispred svoje sobe. Kad sam pogledao, vidio sam oca kako leži dolje, a batler je bio pored njega.\""
             }
         ],
+
+        // Unlocked lobby-wide once anyone has talked to the Wife. The
+        // answer itself has two variants — see askSonAboutFather in
+        // server.js, which checks whether the ASKING player currently
+        // holds the Wrinkled Note (the debt notice from his bedroom).
+        fatherArgumentQuestion: {
+            question: "Why did your father storm out of your room?",
+            answer: "\"We had an argument. He threatened to remove me from his will, then left my room.\""
+        },
+        fatherArgumentQuestionHr: {
+            question: "Zašto je vaš otac izjurio iz vaše sobe?",
+            answer: "\"Posvađali smo se. Prijetio je da će me izbrisati iz oporuke, a zatim je izašao iz moje sobe.\""
+        },
+        fatherArgumentConfession: "\"My father found out about my debt. He threatened to remove me from his will, then left my room.\"",
+        fatherArgumentConfessionHr: "\"Moj je otac saznao za moj dug. Prijetio je da će me izbrisati iz oporuke, a zatim je izašao iz moje sobe.\"",
 
         badEndingImage: "/images/endings/son-ending.png",
         badEndingText: "The young heir barely has time to protest before he's seized. His inheritance, once his by right, is the very thing that now condemns him in the eyes of the room. Meanwhile, the actual murderer slips quietly out the back door.",
@@ -341,81 +424,56 @@ const CHARACTERS = {
         roomSprite: "/images/characters/mysterious-person-room.png",
         closeupImage: "/images/characters/mysterious-person-closeup.png",
 
-        // Shown lobby-wide (everyone, not just the giver) once the
-        // skull has been given to him — his appearance itself changes.
-        // Safe to send in the general character payload (see
-        // getClientCharacters below), since it's just alternate art,
-        // not spoiler content — unlike the fields further down.
         roomSpriteAfterSkull: "/images/characters/mysterious-person-room-revealed.png",
         closeupImageAfterSkull: "/images/characters/mysterious-person-closeup-revealed.png",
 
-        // Never appears on the accusation suspect list, no matter how
-        // many times players talk to him.
         excludeFromSuspects: true,
 
-        // Shown to ANY player, any number of times, until someone has
-        // given him the skull.
         introLine: "\"The manor lord lets me walk his backyard at night. Oh, the things I see...\"",
         introLineHr: "\"Gospodar dvorca dopušta mi da noću šećem njegovim dvorištem. Ah, stvari koje vidim...\"",
 
-        // Shown to any OTHER player once the skull has already been
-        // given to someone (i.e. every player except the giver).
         dismissiveLine: "\"I'm not in the mood to talk.\"",
         dismissiveLineHr: "\"Nisam raspoložen za razgovor.\"",
 
-        // ---- Everything below is intentionally NEVER included in
-        // getClientCharacters()'s whitelist — only delivered directly
-        // to the giver via the mysteriousPersonDialogue event in
-        // server.js, once they've actually given him the skull. This
-        // is what stops a player from reading the real clue in advance
-        // via devtools/network tab. The Hr variants below follow the
-        // exact same rule — server.js picks which language to send at
-        // the moment of delivery, never both at once. ----
-
-        // The giver's new intro line, replacing the teaser above —
-        // followed immediately by the question list below.
         hintIntroLine: "\"...You brought me a gift. Very well, ask what you wish.\"",
         hintIntroLineHr: "\"...Donijeli ste mi dar. Vrlo dobro, pitajte što želite.\"",
 
         revealedQuestions: [
             {
+                id: "what-doing-here",
+                question: "What are you doing here?",
+                answer: "\"Listening to the creatures of the night. It's a full moon — maybe you should go back in the house.\""
+            },
+            {
                 id: "victim-relation",
-                question: "What do you know about the murder?",
-                answer: "\"Ask the cook where they really were the night the master died. The kitchen was dark that night. No candles burned.\""
+                question: "What is your relation to the victim?",
+                answer: "\"Mr. Ashworth let me walk around his backyard at night. I'm not interested in entering his house, though.\""
             },
             {
-                id: "who-are-you",
-                question: "Who are you, really?",
-                answer: "\"Just a wanderer who's seen more of this house's secrets than its own family has.\""
-            },
-            {
-                id: "why-here",
-                question: "Why do you linger in this backyard?",
-                answer: "\"Old habits. I watched this house long before the killing started, and I'll watch it long after.\""
+                id: "unusual-night",
+                question: "Did you see anything unusual last night?",
+                answer: "\"You see many strange things when wandering at night, like seeing Mrs. Ashworth with some man at midnight.\""
             }
         ],
 
         revealedQuestionsHr: [
             {
+                id: "what-doing-here",
+                question: "Što radite ovdje?",
+                answer: "\"Slušam noćna stvorenja. Pun je mjesec — možda biste se trebali vratiti u kuću.\""
+            },
+            {
                 id: "victim-relation",
-                question: "Što znate o ubojstvu?",
-                answer: "\"Pitajte kuharicu gdje je zapravo bila one noći kad je gospodar umro. Kuhinja je te noći bila mračna. Nijedna svijeća nije gorjela.\""
+                question: "Kakav je vaš odnos sa žrtvom?",
+                answer: "\"Gospodin Ashworth mi je dopuštao da šećem njegovim dvorištem noću. Ipak, ne zanima me ulazak u njegovu kuću.\""
             },
             {
-                id: "who-are-you",
-                question: "Tko ste vi, zapravo?",
-                answer: "\"Samo lutalica koja je vidjela više tajni ove kuće nego njena vlastita obitelj.\""
-            },
-            {
-                id: "why-here",
-                question: "Zašto se zadržavate u ovom dvorištu?",
-                answer: "\"Stare navike. Promatrao sam ovu kuću davno prije nego što je ubojstvo počelo, i promatrat ću je dugo nakon.\""
+                id: "unusual-night",
+                question: "Jeste li sinoć vidjeli nešto neobično?",
+                answer: "\"Čovjek vidi mnogo čudnih stvari dok luta noću, poput gospođe Ashworth s nekim muškarcem u ponoć.\""
             }
         ],
 
-        // Unused (his public dialogue is fully bespoke, driven by the
-        // fields above) — kept only so this entry has the same shape
-        // as every other character.
         questions: []
     }
 };
@@ -424,13 +482,6 @@ function getClientCharacters() {
     const clientCharacters = {};
 
     for (const [id, character] of Object.entries(CHARACTERS)) {
-        // isMurderer, excludeFromSuspects, dismissiveLine, hintIntroLine,
-        // revealedQuestions, and every ending field are all
-        // deliberately left out here — the browser only ever learns
-        // them through the actual gameplay events that reveal them
-        // (interactWithMysteriousPerson's response, or the
-        // accusationResult once the game has ended), not the general
-        // room/character data available throughout the game.
         clientCharacters[id] = {
             id: character.id,
             name: character.name,
@@ -450,4 +501,3 @@ function getClientCharacters() {
 }
 
 module.exports = { CHARACTERS, getClientCharacters };
-

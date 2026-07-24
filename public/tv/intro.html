@@ -177,6 +177,25 @@
 
         applyMuteState();
 
+        // Same localStorage key as tv/index.html and tv/game.html — the
+        // language is chosen once, on the lobby screen, and carried
+        // forward here via this shared key.
+        const tvLanguage = localStorage.getItem("tvLanguage") === "hr" ? "hr" : "en";
+
+        const TV_UI_HR = {
+            connectingToGame: "Povezivanje s igrom…",
+            lobbyConnected: "povezana",
+            reconnecting: "Ponovno povezivanje…",
+            enterMansion: "Uđi u dvorac"
+        };
+
+        function tvUI(key) {
+            if (tvLanguage === "hr" && TV_UI_HR[key]) return TV_UI_HR[key];
+            return null;
+        }
+
+        enterButton.textContent = tvUI("enterMansion") || "Enter the Mansion";
+
         let tvSessionId = localStorage.getItem("tvSessionId");
         let lobbyRestored = false;
         let currentLobby = null;
@@ -186,7 +205,7 @@
         }
 
         socket.on("connect", () => {
-            connectionStatus.innerText = "Connecting to game…";
+            connectionStatus.innerText = tvUI("connectingToGame") || "Connecting to game…";
 
             socket.emit("join", {
                 type: "tv",
@@ -204,7 +223,7 @@
         socket.on("lobbyCreated", (lobby) => {
             lobbyRestored = true;
             currentLobby = lobby;
-            connectionStatus.innerText = "Lobby " + lobby.code + " connected";
+            connectionStatus.innerText = "Lobby " + lobby.code + " " + (tvUI("lobbyConnected") || "connected");
 
             if (lobby.status === "playing") {
                 window.location.href = "/tv/game.html";
@@ -229,13 +248,28 @@
         });
 
         socket.on("disconnect", () => {
-            connectionStatus.innerText = "Reconnecting…";
+            connectionStatus.innerText = tvUI("reconnecting") || "Reconnecting…";
         });
 
         let letterIndex = 0;
         const typingSpeed = 42;
         let introStarted = false;
+
+        // Broadcast to phones via introStoryReady/introStory below —
+        // always English, regardless of this TV's own language. A
+        // Croatian-language phone already builds its own Croatian
+        // version locally and ignores this broadcast entirely (see
+        // buildCroatianStory() in phone/index.html) — English-language
+        // phones are the ones actually relying on this.
         let story = "";
+
+        // What THIS TV screen actually displays/types out — English or
+        // Croatian depending on tvLanguage, set once in startIntro()
+        // below. Deliberately a separate variable from `story` above:
+        // the two can differ (e.g. Croatian TV + a mix of English/
+        // Croatian phones), and only `story` (English) ever goes out
+        // over the wire.
+        let displayStory = "";
 
         // Uses this TV's own local clock — since the TV is the host
         // device, that's the host's time zone with no extra plumbing
@@ -274,11 +308,52 @@
             ].join("\n");
         }
 
+        // Same content as buildStory() above, in Croatian — kept as a
+        // fully separate function (rather than a lookup table) since
+        // it's a short narrative paragraph, not a handful of discrete
+        // strings.
+        function buildCroatianStory(lobby) {
+            const now = new Date();
+
+            const dateStr = now.toLocaleDateString("hr-HR", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric"
+            });
+
+            const timeStr = now.toLocaleTimeString("hr-HR", {
+                hour: "numeric",
+                minute: "2-digit"
+            });
+
+            const detectiveNames = (lobby.players || [])
+                .map(p => p.name)
+                .filter(Boolean)
+                .join(", ");
+
+            const detectiveLine = detectiveNames
+                ? `Ekipa detektiva — ${detectiveNames} — pozvana je na mjesto događaja kako bi istražila ovu neobičnu smrt.`
+                : "Ekipa detektiva pozvana je na mjesto događaja kako bi istražila ovu neobičnu smrt.";
+
+            return [
+                `${dateStr}, ${timeStr}.`,
+                "",
+                "Vlasnik ovog dvorca pronađen je mrtav u predvorju, u podnožju stepenica, a otkrio ga je batler.",
+                "Na tijelu nije bilo rana, što upućuje na tragičnu nesreću.",
+                "",
+                detectiveLine
+            ].join("\n");
+        }
+
         function startIntro() {
             if (introStarted) return;
 
             introStarted = true;
             story = buildStory(currentLobby || {});
+            displayStory = (tvLanguage === "hr")
+                ? buildCroatianStory(currentLobby || {})
+                : story;
 
             if (currentLobby) {
                 socket.emit("introStoryReady", {
@@ -287,7 +362,7 @@
                 });
             }
 
-            fitStoryTextToScreen(story);
+            fitStoryTextToScreen(displayStory);
 
             setTimeout(() => {
                 intro.style.opacity = "1";
@@ -340,12 +415,12 @@
         }
 
         function typeNextLetter() {
-            if (letterIndex >= story.length) {
+            if (letterIndex >= displayStory.length) {
                 enterButton.style.display = "inline-block";
                 return;
             }
 
-            const letter = story[letterIndex];
+            const letter = displayStory[letterIndex];
             storyText.textContent += letter;
             letterIndex++;
 

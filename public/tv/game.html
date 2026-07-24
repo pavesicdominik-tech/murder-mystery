@@ -485,19 +485,19 @@
         <button id="settingsButton" onclick="toggleSettings()" title="Settings">⚙</button>
 
         <div id="settingsMenu">
-            <div class="settingsTitle">Remove Player</div>
+            <div class="settingsTitle" id="removePlayerTitle">Remove Player</div>
             <div id="settingsPlayers"></div>
 
-            <button class="exitButton" onclick="showExitConfirmation()">Exit Game</button>
+            <button class="exitButton" id="exitGameButton" onclick="showExitConfirmation()">Exit Game</button>
 
             <div id="exitConfirm">
-                <p class="exitWarning">
+                <p class="exitWarning" id="exitWarningText">
                     Are you sure? This will end the game for every connected player.
                 </p>
 
                 <div class="exitActions">
-                    <button class="confirmExitButton" onclick="confirmExitGame()">Yes, End Game</button>
-                    <button class="cancelExitButton" onclick="hideExitConfirmation()">Cancel</button>
+                    <button class="confirmExitButton" id="confirmExitButton" onclick="confirmExitGame()">Yes, End Game</button>
+                    <button class="cancelExitButton" id="cancelExitButton" onclick="hideExitConfirmation()">Cancel</button>
                 </div>
             </div>
         </div>
@@ -601,6 +601,74 @@
 
     applyMuteState();
 
+    // Same localStorage key as tv/index.html — the language is chosen
+    // once, on the lobby-creation screen, and just carried forward
+    // here (and in tv/intro.html) via this shared key. No picker UI on
+    // this page; only the lobby screen offers the choice.
+    const tvLanguage = localStorage.getItem("tvLanguage") === "hr" ? "hr" : "en";
+
+    const TV_UI_HR = {
+        connecting: "Povezivanje s dvorcem...",
+        reconnecting: "Ponovno povezivanje...",
+        removePlayerTitle: "Ukloni igrača",
+        exitGameButton: "Izađi iz igre",
+        exitWarning: "Jesi li siguran/sigurna? Ovo će završiti igru za sve povezane igrače.",
+        confirmExitButton: "Da, završi igru",
+        cancelButton: "Odustani",
+        accuseButton: "Optuži",
+        votedOf: "glasalo",
+        tieMessage: "Grupa se nije odlučila tko je osumnjičen/a.",
+        goodEnding: "DOBAR ZAVRŠETAK",
+        badEnding: "LOŠ ZAVRŠETAK",
+        endGameButton: "Završi igru",
+        lobbyLabel: "Soba",
+        noPlayersInGame: "Nema igrača u igri.",
+        offline: "(offline)",
+        kickButton: "Ukloni"
+    };
+
+    function tvUI(key) {
+        if (tvLanguage === "hr" && TV_UI_HR[key]) return TV_UI_HR[key];
+        return null;
+    }
+
+    // Character names in the voting tally come from charactersConfig
+    // (loaded below via /api/game-data), which already carries nameHr
+    // alongside name — same non-secret data every client gets.
+    function tvCharacterName(character) {
+        if (!character) return "";
+        return (tvLanguage === "hr" && character.nameHr) ? character.nameHr : character.name;
+    }
+
+    const TV_MESSAGE_HR = {
+        "TV session was not initialized.": "TV sesija nije pokrenuta.",
+        "Game no longer exists.": "Igra više ne postoji.",
+        "Only the host can end this game.": "Samo domaćin može završiti ovu igru.",
+        "It's too soon to accuse.": "Prerano je za optužbu.",
+        "A vote is already underway.": "Glasanje je već u tijeku.",
+        "No suspects yet.": "Još nema osumnjičenih."
+    };
+
+    function tvMsg(text) {
+        if (tvLanguage !== "hr") return text;
+        return TV_MESSAGE_HR[text] || text;
+    }
+
+    function applyTvLanguage() {
+        document.getElementById("loading").textContent = tvUI("connecting") || "Connecting to mansion...";
+        document.getElementById("removePlayerTitle").textContent = tvUI("removePlayerTitle") || "Remove Player";
+        document.getElementById("exitGameButton").textContent = tvUI("exitGameButton") || "Exit Game";
+        document.getElementById("exitWarningText").textContent =
+            tvUI("exitWarning") || "Are you sure? This will end the game for every connected player.";
+        document.getElementById("confirmExitButton").textContent = tvUI("confirmExitButton") || "Yes, End Game";
+        document.getElementById("cancelExitButton").textContent = tvUI("cancelButton") || "Cancel";
+        document.getElementById("suspectListButton").textContent = tvUI("accuseButton") || "Accuse";
+        document.getElementById("votingPopupCancel").textContent = tvUI("cancelButton") || "Cancel";
+        document.getElementById("endingEndGameButton").textContent = tvUI("endGameButton") || "End Game";
+    }
+
+    applyTvLanguage();
+
 
     // Where each room's marker sits on mansion-map.png, as a % of the
     // map image's width/height. This used to be hardcoded here — it
@@ -665,7 +733,7 @@
         currentLobby = lobby;
         loading.style.display = "none";
         mapScreen.style.display = "flex";
-        status.innerText = "Lobby " + lobby.code;
+        status.innerText = (tvUI("lobbyLabel") || "Lobby") + " " + lobby.code;
         drawPlayers(lobby.players);
         renderSettingsPlayers(lobby.players);
         renderVotingPopup(lobby);
@@ -677,7 +745,7 @@
         currentLobby = lobby;
         loading.style.display = "none";
         mapScreen.style.display = "flex";
-        status.innerText = "Lobby " + lobby.code;
+        status.innerText = (tvUI("lobbyLabel") || "Lobby") + " " + lobby.code;
         drawPlayers(lobby.players);
         renderSettingsPlayers(lobby.players);
         renderVotingPopup(lobby);
@@ -695,7 +763,7 @@
         const banner = document.getElementById("accuseErrorBanner");
 
         clearTimeout(accuseErrorTimer);
-        banner.textContent = message;
+        banner.textContent = tvMsg(message);
         banner.style.display = "block";
 
         accuseErrorTimer = setTimeout(() => {
@@ -715,7 +783,8 @@
     let notificationHistory = [];
 
     socket.on("tvNotification", (data) => {
-        notificationHistory.push(data.message);
+        const text = (tvLanguage === "hr" && data.messageHr) ? data.messageHr : data.message;
+        notificationHistory.push(text);
 
         if (notificationHistory.length > MAX_VISIBLE_NOTIFICATIONS) {
             notificationHistory = notificationHistory.slice(-MAX_VISIBLE_NOTIFICATIONS);
@@ -748,13 +817,19 @@
     }
 
     socket.on("disconnect", () => {
-        status.innerText = "Reconnecting...";
+        status.innerText = tvUI("reconnecting") || "Reconnecting...";
     });
 
     // "good"/"bad" results are reflected via lobby.status becoming
     // "ended" on the next lobbyUpdate (see syncEndingScreen) — that
     // persists correctly even if the TV reloads. A tie has no lasting
     // state, so it gets a one-off banner here instead.
+    // Captured here (rather than reading straight from lobby.endingStoryText,
+    // which is always English) so the ending screen can show the
+    // Croatian version when this TV's language is set to Croatian —
+    // see syncEndingScreen() below.
+    let tvEndingOverride = null;
+
     socket.on("accusationResult", (data) => {
         // Hide the popup and stop the music right away rather than
         // waiting for the next lobbyUpdate (accusationResult always
@@ -768,10 +843,16 @@
             votingMusic.currentTime = 0;
         }
 
-        if (data.result !== "tie") return;
+        if (data.result !== "tie") {
+            tvEndingOverride = {
+                storyText: data.storyText,
+                storyTextHr: data.storyTextHr
+            };
+            return;
+        }
 
         const banner = document.getElementById("voteResultBanner");
-        banner.textContent = "Group hasn't decided who the suspect is.";
+        banner.textContent = tvUI("tieMessage") || "Group hasn't decided who the suspect is.";
         banner.style.display = "block";
 
         setTimeout(() => {
@@ -878,7 +959,9 @@
         }
 
         document.getElementById("votingPopupAccuser").textContent =
-            `${accusation.accuserName} is making an accusation`;
+            tvLanguage === "hr"
+                ? `${accusation.accuserName} podnosi optužbu`
+                : `${accusation.accuserName} is making an accusation`;
 
         const interacted = lobby.interactedCharacters || {};
         const votes = accusation.votes || {};
@@ -894,15 +977,16 @@
         const rows = Object.keys(interacted)
             .filter(characterId => interacted[characterId] && charactersConfig[characterId])
             .map(characterId => {
-                const name = charactersConfig[characterId].name;
+                const name = tvCharacterName(charactersConfig[characterId]);
                 const count = tally[characterId] || 0;
                 return `<div class="votingPopupRow"><span>${escapeHtml(name)}</span><span>${count}</span></div>`;
             })
             .join("");
 
         document.getElementById("votingPopupTally").innerHTML = rows;
-        document.getElementById("votingPopupProgress").textContent =
-            `${votedCount} / ${connectedCount} voted`;
+        document.getElementById("votingPopupProgress").textContent = tvLanguage === "hr"
+            ? `${votedCount} / ${connectedCount} ${tvUI("votedOf")}`
+            : `${votedCount} / ${connectedCount} voted`;
 
         popup.style.display = "flex";
     }
@@ -945,7 +1029,12 @@
 
         if (!endingTypewriterStarted) {
             endingTypewriterStarted = true;
-            startEndingTypewriter(lobby.endingStoryText || "");
+
+            const storyText = (tvLanguage === "hr" && tvEndingOverride?.storyTextHr)
+                ? tvEndingOverride.storyTextHr
+                : (lobby.endingStoryText || "");
+
+            startEndingTypewriter(storyText);
         }
 
         // Plays for both good and bad endings — only started once per
@@ -996,7 +1085,10 @@
     function finishEndingTypewriter() {
         const verdict = document.getElementById("endingVerdict");
 
-        verdict.textContent = currentEndingResult === "good" ? "GOOD ENDING" : "BAD ENDING";
+        const goodLabel = tvUI("goodEnding") || "GOOD ENDING";
+        const badLabel = tvUI("badEnding") || "BAD ENDING";
+
+        verdict.textContent = currentEndingResult === "good" ? goodLabel : badLabel;
         verdict.style.color = currentEndingResult === "good" ? "#3ddc73" : "#ff4d4d";
         verdict.style.display = "block";
 
@@ -1043,16 +1135,19 @@
 
     function renderSettingsPlayers(players) {
         if (!players.length) {
-            settingsPlayers.innerHTML = "No players in the game.";
+            settingsPlayers.innerHTML = tvUI("noPlayersInGame") || "No players in the game.";
             return;
         }
+
+        const offlineLabel = tvUI("offline") || "(offline)";
+        const kickLabel = tvUI("kickButton") || "Kick";
 
         settingsPlayers.innerHTML = players.map(player => `
             <div class="settingsPlayer">
                 <span class="settingsPlayerName">
-                    ${escapeHtml(player.name)}${player.connected ? "" : " (offline)"}
+                    ${escapeHtml(player.name)}${player.connected ? "" : " " + offlineLabel}
                 </span>
-                <button class="kickButton" onclick="kickPlayer('${player.token}')">Kick</button>
+                <button class="kickButton" onclick="kickPlayer('${player.token}')">${kickLabel}</button>
             </div>
         `).join("");
     }

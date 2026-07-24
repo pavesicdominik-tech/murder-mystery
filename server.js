@@ -3,8 +3,6 @@ const http = require("http");
 const { Server } = require("socket.io");
 const QRCode = require("qrcode");
 const crypto = require("crypto");
-const fs = require("fs");
-const path = require("path");
 
 const { createLobby } = require("./game/lobby");
 const { ITEMS, DEFAULT_PICKUP_SOUND, getClientItems } = require("./game/items");
@@ -16,32 +14,22 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 // ============================================================
-// GAME-COMPLETION LOGGING (for the developer's own stats only —
+// GAME-COMPLETION LOGGING (for the developer's own records only —
 // never shown to players)
 // ============================================================
-// Deliberately just a plain append-only file, not a database: one
-// small line gets written the moment a game actually finishes (not
-// during gameplay itself), so this adds essentially zero ongoing
-// server load. Reading/aggregating it only happens if someone visits
-// /admin/stats, which will be rare (just the developer, occasionally)
-// — the cost of computing stats is paid only on that request, never
-// during normal play.
-const LOG_DIR = path.join(__dirname, "data");
-const GAME_LOG_PATH = path.join(LOG_DIR, "completed-games.jsonl");
-
-try {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-} catch (err) {
-    console.error("Could not create data directory for game logs:", err);
-}
-
-// One JSON object per line (JSONL) rather than one big JSON array —
-// appending a line is O(1) regardless of how large the file already
-// is, whereas appending to a JSON array means rewriting the whole
-// file every time. Trade-off: reading it back requires splitting on
-// newlines rather than a single JSON.parse, which is what
-// readCompletedGames() below does.
+// Sends one small message to a Google Sheet each time a game actually
+// finishes (not during gameplay itself) — see the setup steps for
+// SHEETS_WEBHOOK_URL below. Deliberately NOT a local file: Render (and
+// most hosts) wipe local files on every redeploy/restart, so anything
+// written to disk here would just disappear. A Google Sheet is free,
+// needs no database, and is already something you know how to read.
+//
+// If SHEETS_WEBHOOK_URL isn't set, this quietly does nothing — the
+// game still works completely normally, you just won't get logs.
 function logCompletedGame(lobby, accusedId, accusedCharacter, isCorrect) {
+    const webhookUrl = process.env.SHEETS_WEBHOOK_URL;
+    if (!webhookUrl) return;
+
     const durationSeconds = lobby.gameStartedAt
         ? Math.round((Date.now() - lobby.gameStartedAt) / 1000)
         : null;
@@ -56,52 +44,16 @@ function logCompletedGame(lobby, accusedId, accusedCharacter, isCorrect) {
         result: isCorrect ? "good" : "bad"
     };
 
-    // Fire-and-forget: a failed log write should never be able to
-    // break the actual game for players, so this only logs its own
+    // Fire-and-forget: a failed log send should never be able to
+    // affect the actual game for players, so this only logs its own
     // error to the console rather than throwing.
-    fs.appendFile(GAME_LOG_PATH, JSON.stringify(entry) + "\n", (err) => {
-        if (err) console.error("Failed to write game-completion log:", err);
+    fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry)
+    }).catch(err => {
+        console.error("Failed to send game-completion log:", err);
     });
-}
-
-function readCompletedGames() {
-    let raw;
-
-    try {
-        raw = fs.readFileSync(GAME_LOG_PATH, "utf8");
-    } catch (err) {
-        // File doesn't exist yet (no games finished so far) — not a
-        // real error, just means there's nothing to report yet.
-        return [];
-    }
-
-    return raw
-        .split("\n")
-        .map(line => line.trim())
-        .filter(Boolean)
-        .map(line => {
-            try {
-                return JSON.parse(line);
-            } catch (err) {
-                return null;
-            }
-        })
-        .filter(Boolean);
-}
-
-// A single secret key rather than a full login system — proportionate
-// for a stats page only the developer will ever look at. Set your own
-// via the ADMIN_KEY environment variable (e.g. in Render's dashboard
-// under Environment); if you don't set one, a random key is generated
-// each time the server starts and printed to the console/host logs so
-// you can still access it, but it'll change on every restart/redeploy
-// in that case — set your own for a stable link.
-const ADMIN_KEY = process.env.ADMIN_KEY || crypto.randomBytes(12).toString("hex");
-
-if (!process.env.ADMIN_KEY) {
-    console.log("No ADMIN_KEY environment variable set.");
-    console.log(`Generated a temporary one for this run: ${ADMIN_KEY}`);
-    console.log(`Stats page: /admin/stats?key=${ADMIN_KEY}`);
 }
 
 // While this game is under active development, HTML/JS files should
@@ -145,183 +97,6 @@ app.get("/api/game-data", (req, res) => {
         items: getClientItems()
     });
 });
-
-// Developer-only stats — never linked from anywhere in the game
-// itself, and gated behind ADMIN_KEY (see above). Aggregation only
-// happens here, on-demand, when this exact URL is visited — it costs
-// nothing during normal gameplay.
-app.get("/admin/stats", (req, res) => {
-    if (req.query.key !== ADMIN_KEY) {
-        res.status(401).send("Not authorized.");
-        return;
-    }
-
-    const games = readCompletedGames();
-    const totalGames = games.length;
-
-    const format = (req.query.format || "").toLowerCase();
-    if (format === "json") {
-        res.json({ totalGames, games });
-        return;
-    }
-
-    if (!totalGames) {
-        res.send(renderStatsPage({ totalGames: 0 }));
-        return;
-    }
-
-    const durations = games
-        .map(g => g.durationSeconds)
-        .filter(d => typeof d === "number" && d >= 0);
-
-    const avgDurationSeconds = durations.length
-        ? Math.round(durations.reduce((sum, d) => sum + d, 0) / durations.length)
-        : null;
-
-    const avgPlayerCount =
-        games.reduce((sum, g) => sum + (g.playerCount || 0), 0) / totalGames;
-
-    const correctCount = games.filter(g => g.result === "good").length;
-    const winRatePercent = Math.round((correctCount / totalGames) * 100);
-
-    // How often each character ended up being the one accused —
-    // whether that accusation was right or wrong, this counts every
-    // finished game's outcome once.
-    const characterCounts = {};
-    games.forEach(g => {
-        const name = g.accusedCharacterName || g.accusedCharacterId || "Unknown";
-        characterCounts[name] = (characterCounts[name] || 0) + 1;
-    });
-
-    const characterBreakdown = Object.entries(characterCounts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, count]) => ({
-            name,
-            count,
-            percent: Math.round((count / totalGames) * 100)
-        }));
-
-    res.send(renderStatsPage({
-        totalGames,
-        avgDurationSeconds,
-        avgPlayerCount,
-        winRatePercent,
-        characterBreakdown
-    }));
-});
-
-function formatDuration(totalSeconds) {
-    if (totalSeconds === null || totalSeconds === undefined) return "—";
-
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
-}
-
-function renderStatsPage(stats) {
-    if (!stats.totalGames) {
-        return `<!DOCTYPE html>
-<html><head><title>Game Stats</title>
-<style>body{font-family:Arial,sans-serif;background:#181010;color:#f2e5c4;padding:40px;}</style>
-</head><body><h1>Game Stats</h1><p>No completed games logged yet.</p></body></html>`;
-    }
-
-    const rows = stats.characterBreakdown.map(row => `
-        <tr>
-            <td>${row.name}</td>
-            <td>${row.count}</td>
-            <td>${row.percent}%</td>
-        </tr>
-    `).join("");
-
-    return `<!DOCTYPE html>
-<html>
-<head>
-    <title>Game Stats</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #181010;
-            color: #f2e5c4;
-            padding: 40px;
-            max-width: 640px;
-            margin: 0 auto;
-        }
-        h1 { margin-bottom: 4px; }
-        .subtitle { opacity: 0.7; margin-bottom: 30px; }
-        .statGrid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 36px;
-        }
-        .statBox {
-            border: 1px solid #b58c5a;
-            border-radius: 8px;
-            padding: 16px;
-        }
-        .statBox .label {
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            opacity: 0.7;
-        }
-        .statBox .value {
-            font-size: 28px;
-            margin-top: 6px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            text-align: left;
-            padding: 8px 10px;
-            border-bottom: 1px solid rgba(181, 140, 90, 0.35);
-        }
-        th {
-            text-transform: uppercase;
-            font-size: 12px;
-            letter-spacing: 1px;
-            opacity: 0.7;
-        }
-    </style>
-</head>
-<body>
-    <h1>Game Stats</h1>
-    <div class="subtitle">${stats.totalGames} completed game${stats.totalGames === 1 ? "" : "s"} logged</div>
-
-    <div class="statGrid">
-        <div class="statBox">
-            <div class="label">Average duration</div>
-            <div class="value">${formatDuration(stats.avgDurationSeconds)}</div>
-        </div>
-        <div class="statBox">
-            <div class="label">Average players per game</div>
-            <div class="value">${stats.avgPlayerCount.toFixed(1)}</div>
-        </div>
-        <div class="statBox">
-            <div class="label">Win rate (correct accusation)</div>
-            <div class="value">${stats.winRatePercent}%</div>
-        </div>
-        <div class="statBox">
-            <div class="label">Total games</div>
-            <div class="value">${stats.totalGames}</div>
-        </div>
-    </div>
-
-    <h2>Who ended up accused</h2>
-    <table>
-        <thead>
-            <tr><th>Character</th><th>Times accused</th><th>% of games</th></tr>
-        </thead>
-        <tbody>
-            ${rows}
-        </tbody>
-    </table>
-</body>
-</html>`;
-}
 
 const lobbies = {};
 
@@ -456,7 +231,8 @@ function sendPrivatePlayerUpdate(socket, lobby, playerToken) {
     if (!player) return;
 
     socket.emit("playerUpdate", {
-        inventory: player.inventory || []
+        inventory: player.inventory || [],
+        ratPoisonClicks: player.ratPoisonClicks || 0
     });
 }
 
@@ -464,7 +240,8 @@ function sendPrivateInventoryToPlayer(player) {
     if (!player?.socketId) return;
 
     io.to(player.socketId).emit("playerUpdate", {
-        inventory: player.inventory || []
+        inventory: player.inventory || [],
+        ratPoisonClicks: player.ratPoisonClicks || 0
     });
 }
 
@@ -473,11 +250,12 @@ function sendPrivateInventoryToPlayer(player) {
 // to the whole lobby room — the TV page listens for it and renders it;
 // phones simply have no listener for this event, so it's harmless
 // there.
-function sendTvNotification(lobby, message) {
+function sendTvNotification(lobby, enMessage, hrMessage) {
     if (!lobby) return;
 
     io.to(lobby.code).emit("tvNotification", {
-        message,
+        message: enMessage,
+        messageHr: hrMessage || enMessage,
         timestamp: Date.now()
     });
 }
@@ -562,12 +340,21 @@ function checkAccusationComplete(lobby) {
     // out of getClientCharacters() all game — so unlike most lobby
     // broadcasts, this one can't be a single io.to(code).emit() with
     // one shared payload. Each connected player gets their own
-    // dedicated emit, personalized to their stored language; the TV
-    // (which never sets a player language) always gets English.
+    // dedicated emit, personalized to their stored language.
+    //
+    // The TV gets BOTH languages in one payload instead (storyTextHr
+    // alongside storyText) and picks locally — the server doesn't
+    // track a TV-side language preference the way it does per-player,
+    // and there's no spoiler risk in sending both: this only ever
+    // fires once the mystery is already resolved for this game.
     const englishPayload = {
         result: lobby.endingResult,
         characterName: accusedCharacter?.name || accusedId,
+        characterNameHr: pickLang(accusedCharacter, "name", "hr") || accusedCharacter?.name || accusedId,
         storyText: lobby.endingStoryText,
+        storyTextHr: isCorrect
+            ? (accusedCharacter?.goodEndingTextHr || lobby.endingStoryText)
+            : (accusedCharacter?.badEndingTextHr || lobby.endingStoryText),
         backgroundImage: lobby.endingBackgroundImage
     };
 
@@ -1000,7 +787,8 @@ io.on("connection", (socket) => {
 
         sendTvNotification(
             lobby,
-            `${player.name} has picked up a ${itemDetails.name} in the ${ROOMS[placement.room]?.label || placement.room}.`
+            `${player.name} has picked up a ${itemDetails.name} in the ${ROOMS[placement.room]?.label || placement.room}.`,
+            `${player.name} je pokupio/la ${pickLang(itemDetails, "name", "hr")} u sobi „${pickLang(ROOMS[placement.room], "label", "hr") || placement.room}".`
         );
 
         sendPrivatePlayerUpdate(socket, lobby, playerToken);
@@ -1294,7 +1082,11 @@ io.on("connection", (socket) => {
         lobby.basementUnlocked = true;
 
         socket.emit("basementUnlocked");
-        sendTvNotification(lobby, `${player.name} has unlocked the basement door.`);
+        sendTvNotification(
+            lobby,
+            `${player.name} has unlocked the basement door.`,
+            `${player.name} je otključao/la vrata podruma.`
+        );
         sendPrivatePlayerUpdate(socket, lobby, playerToken);
         sendLobbyUpdate(lobby);
     });
@@ -1317,7 +1109,7 @@ io.on("connection", (socket) => {
         }
 
         if (lobby.basementPictureMoved) {
-            socket.emit("gameMessage", "The picture has already been moved.");
+            socket.emit("gameMessage", "The boxes have already been moved.");
             return;
         }
 
@@ -1325,7 +1117,7 @@ io.on("connection", (socket) => {
 
         socket.emit(
             "gameMessage",
-            "The picture shifts aside, revealing a hidden safe."
+            "The boxes shift aside, revealing a hidden safe."
         );
 
         sendLobbyUpdate(lobby);
@@ -1373,7 +1165,11 @@ io.on("connection", (socket) => {
             "A bookshelf moves, revealing a passage."
         );
 
-        sendTvNotification(lobby, `${player.name} found a hidden passage in the Library.`);
+        sendTvNotification(
+            lobby,
+            `${player.name} found a hidden passage in the Library.`,
+            `${player.name} je pronašao/pronašla skriveni prolaz u knjižnici.`
+        );
 
         sendLobbyUpdate(lobby);
     });
@@ -1412,6 +1208,67 @@ io.on("connection", (socket) => {
             : catConfig.sound;
 
         socket.emit("catHotspotSound", { sound: sound || null });
+    });
+
+    // Backyard full moon — plays its sound exactly once per player,
+    // ever (not once per lobby) — same lazy-init-on-player pattern as
+    // catClicks above, just capped at a single play instead of a
+    // multi-click sequence.
+    socket.on("clickFullMoonHotspot", ({ code, playerToken }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (player.currentRoom !== "backyard") return;
+
+        if (player.fullMoonSoundPlayed) return;
+
+        player.fullMoonSoundPlayed = true;
+        socket.emit("fullMoonSound");
+    });
+
+    // Backyard mausoleum — a locked door, purely flavor. Repeatable
+    // (no once-per-player limit) since it's just a flat "still
+    // locked" message every time, not a puzzle or escalating sequence.
+    socket.on("clickMausoleumHotspot", ({ code, playerToken }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (player.currentRoom !== "backyard") return;
+
+        socket.emit("mausoleumSound");
+        socket.emit(
+            "gameMessage",
+            "Mausoleum. It's locked. Probably nobody alive in there to talk with."
+        );
+    });
+
+    // Basement rat poison — a 3-stage curiosity, per player:
+    //   click 1: image swaps to the "disturbed" version + a sound
+    //            plays (once only — later clicks don't replay it).
+    //   click 2: nothing new — same image stays, no sound, no popup.
+    //   click 3 onward: shows a close-up popup every time, and the
+    //            image stays on its "disturbed" appearance.
+    // player.ratPoisonClicks is what makes this persist correctly if
+    // the player leaves the basement and comes back — see
+    // sendPrivatePlayerUpdate above, which includes it on every sync.
+    socket.on("clickRatPoisonHotspot", ({ code, playerToken }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (player.currentRoom !== "basement") return;
+
+        player.ratPoisonClicks = (player.ratPoisonClicks || 0) + 1;
+
+        socket.emit("ratPoisonClickResult", { clicks: player.ratPoisonClicks });
     });
 
     // Kitchen fireplace hotspot — a small multi-step puzzle, lobby-wide
@@ -1470,7 +1327,11 @@ io.on("connection", (socket) => {
                 icon: waterItem.icon
             });
 
-            sendTvNotification(lobby, `${player.name} extinguished the fire in the Kitchen.`);
+            sendTvNotification(
+                lobby,
+                `${player.name} extinguished the fire in the Kitchen.`,
+                `${player.name} je ugasio/la vatru u kuhinji.`
+            );
             sendPrivatePlayerUpdate(socket, lobby, playerToken);
             sendLobbyUpdate(lobby);
             return;
@@ -1503,7 +1364,11 @@ io.on("connection", (socket) => {
             sound: DEFAULT_PICKUP_SOUND
         });
 
-        sendTvNotification(lobby, `${player.name} found a burned note in the Kitchen.`);
+        sendTvNotification(
+            lobby,
+            `${player.name} found a burned note in the Kitchen.`,
+            `${player.name} je pronašao/pronašla izgorjelu bilješku u kuhinji.`
+        );
         sendPrivatePlayerUpdate(socket, lobby, playerToken);
         sendLobbyUpdate(lobby);
     });
@@ -1559,6 +1424,177 @@ io.on("connection", (socket) => {
         socket.emit(
             "butlerSafeAnswer",
             language === "hr" && safeQuestionHr ? safeQuestionHr : safeQuestion
+        );
+    });
+
+    // Unlocked lobby-wide once anyone has talked to the Butler.
+    socket.on("askWifeAboutArgument", ({ code, playerToken, language }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (!lobby.interactedCharacters?.butler) return;
+
+        const question = CHARACTERS.wife?.argumentQuestion;
+        if (!question) return;
+
+        const questionHr = CHARACTERS.wife?.argumentQuestionHr;
+
+        socket.emit(
+            "wifeArgumentAnswer",
+            language === "hr" && questionHr ? questionHr : question
+        );
+    });
+
+    // Unlocked lobby-wide once anyone has given the Mysterious Person
+    // the skull. The answer has two variants depending on whether THIS
+    // asking player currently holds the Burned Note — the first time
+    // the confession variant is given (by anyone), lobby.
+    // wifeConfessedAboutCook flips permanently, which is what unlocks
+    // the Cook's own wifeInBackyardQuestion below.
+    socket.on("askWifeAboutBackyard", ({ code, playerToken, language }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (!lobby.skullGivenBy) return;
+
+        const baseQuestion = CHARACTERS.wife?.backyardCompanionQuestion;
+        if (!baseQuestion) return;
+
+        const hasBurnedNote = (player.inventory || []).some(
+            item => item.id === "burned-note"
+        );
+
+        if (!hasBurnedNote) {
+            const questionHr = CHARACTERS.wife?.backyardCompanionQuestionHr;
+            socket.emit(
+                "wifeBackyardAnswer",
+                language === "hr" && questionHr ? questionHr : baseQuestion
+            );
+            return;
+        }
+
+        lobby.wifeConfessedAboutCook = true;
+
+        const confessionAnswer = language === "hr"
+            ? (CHARACTERS.wife?.backyardCompanionConfessionHr || CHARACTERS.wife?.backyardCompanionConfession)
+            : CHARACTERS.wife?.backyardCompanionConfession;
+
+        socket.emit("wifeBackyardAnswer", {
+            question: baseQuestion.question,
+            answer: confessionAnswer
+        });
+
+        sendLobbyUpdate(lobby);
+    });
+
+    // Unlocked lobby-wide once anyone has talked to the Wife. The
+    // answer has two variants depending on whether THIS asking player
+    // currently holds the Wrinkled Note (the debt notice from the
+    // Son's Bedroom).
+    socket.on("askSonAboutFather", ({ code, playerToken, language }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (!lobby.interactedCharacters?.wife) return;
+
+        const baseQuestion = CHARACTERS.son?.fatherArgumentQuestion;
+        if (!baseQuestion) return;
+
+        const hasWrinkledNote = (player.inventory || []).some(
+            item => item.id === "wrinkled-note"
+        );
+
+        if (!hasWrinkledNote) {
+            const questionHr = CHARACTERS.son?.fatherArgumentQuestionHr;
+            socket.emit(
+                "sonFatherAnswer",
+                language === "hr" && questionHr ? questionHr : baseQuestion
+            );
+            return;
+        }
+
+        const confessionAnswer = language === "hr"
+            ? (CHARACTERS.son?.fatherArgumentConfessionHr || CHARACTERS.son?.fatherArgumentConfession)
+            : CHARACTERS.son?.fatherArgumentConfession;
+
+        socket.emit("sonFatherAnswer", {
+            question: baseQuestion.question,
+            answer: confessionAnswer
+        });
+    });
+
+    // Unlocked lobby-wide once anyone has given the Mysterious Person
+    // the skull — same trigger as the Wife's backyard question above.
+    socket.on("askCookAboutBackyard", ({ code, playerToken, language }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (!lobby.skullGivenBy) return;
+
+        const question = CHARACTERS.cook?.backyardWatcherQuestion;
+        if (!question) return;
+
+        const questionHr = CHARACTERS.cook?.backyardWatcherQuestionHr;
+
+        socket.emit(
+            "cookBackyardAnswer",
+            language === "hr" && questionHr ? questionHr : question
+        );
+    });
+
+    // Unlocked lobby-wide only once the Wife has actually confessed
+    // (to anyone) that she was with the cook — see
+    // lobby.wifeConfessedAboutCook, set above.
+    socket.on("askCookAboutWife", ({ code, playerToken, language }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (!lobby.wifeConfessedAboutCook) return;
+
+        const question = CHARACTERS.cook?.wifeInBackyardQuestion;
+        if (!question) return;
+
+        const questionHr = CHARACTERS.cook?.wifeInBackyardQuestionHr;
+
+        socket.emit(
+            "cookWifeAnswer",
+            language === "hr" && questionHr ? questionHr : question
+        );
+    });
+
+    // Unlocked lobby-wide once anyone has talked to the Cook.
+    socket.on("askMaidAboutCrying", ({ code, playerToken, language }) => {
+        const lobby = lobbies[code];
+        if (!lobby) return;
+
+        const player = lobby.players.find(p => p.token === playerToken);
+        if (!player || player.socketId !== socket.id) return;
+
+        if (!lobby.interactedCharacters?.cook) return;
+
+        const question = CHARACTERS.maid?.cryingQuestion;
+        if (!question) return;
+
+        const questionHr = CHARACTERS.maid?.cryingQuestionHr;
+
+        socket.emit(
+            "maidCryingAnswer",
+            language === "hr" && questionHr ? questionHr : question
         );
     });
 
@@ -1644,7 +1680,8 @@ io.on("connection", (socket) => {
 
         sendTvNotification(
             lobby,
-            `${player.name} has unlocked the safe in the ${ROOMS.basement.label}.`
+            `${player.name} has unlocked the safe in the ${ROOMS.basement.label}.`,
+            `${player.name} je otključao/la sef u sobi „${ROOMS.basement.labelHr || ROOMS.basement.label}".`
         );
 
         sendLobbyUpdate(lobby);
